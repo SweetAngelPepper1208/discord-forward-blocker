@@ -37,3 +37,9 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 client.login(process.env.TOKEN);
+// Keep-alive server for Replit
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(3000, () => console.log('Express server is running.'));
