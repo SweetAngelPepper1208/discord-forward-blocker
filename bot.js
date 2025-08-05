@@ -7,7 +7,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables from .env
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const client = new Client({
@@ -18,7 +17,6 @@ const client = new Client({
   ]
 });
 
-// Roles restricted from forwarded messages
 const BLOCKED_ROLE_IDS = [
   "1399135278396080238", // First-Time Believer
   "1399992492568350794", // Blessed Cutie
@@ -32,29 +30,26 @@ client.once(Events.ClientReady, () => {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  console.log(`📨 Message from ${message.author.username} in #${message.channel.name}: "${message.content}"`);
-  console.log(`📝 Type: ${message.type}`);
+  console.log(`📨 "${message.content}" from ${message.author.username} | type: ${message.type}`);
 
-  // Skip if there's real message content
-  if (message.content && message.content.trim().length > 0) return;
+  // ✅ Allow if message has text or media
+  if ((message.content && message.content.trim().length > 0) || message.attachments.size > 0) return;
 
   try {
     const member = await message.guild.members.fetch(message.author.id);
-    const hasBlockedRole = BLOCKED_ROLE_IDS.some(id => member.roles.cache.has(id));
+    const hasBlockedRole = BLOCKED_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
 
     if (hasBlockedRole) {
       await message.delete();
-      console.log("❌ Deleted empty message from restricted role.");
+      console.log("❌ Deleted forwarded or empty message.");
     }
   } catch (err) {
-    console.error("⚠️ Error deleting message:", err.message);
+    console.error("⚠️ Deletion failed:", err.message);
   }
 });
 
-// Web server for keep-alive
 const app = express();
-app.get('/', (_, res) => res.send('Bot is online!'));
-app.listen(3000, () => console.log('🌐 Keep-alive server running on port 3000'));
+app.get('/', (_, res) => res.send('Bot is running!'));
+app.listen(3000, () => console.log('🌐 Keep-alive server active'));
 
-// Start bot
 client.login(process.env.TOKEN);
