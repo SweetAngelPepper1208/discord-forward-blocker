@@ -1,11 +1,24 @@
-import { Client, GatewayIntentBits, Events } from "discord.js";
-import dotenv from "dotenv";
-dotenv.config();
+import { Client, GatewayIntentBits, Events } from 'discord.js';
+import express from 'express';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from .env
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
+// Roles restricted from forwarded messages
 const BLOCKED_ROLE_IDS = [
   "1399135278396080238", // First-Time Believer
   "1399992492568350794", // Blessed Cutie
@@ -17,29 +30,31 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot) return;
-  if (!message.guild) return;
-  if (!message.forwarded) return;
+  if (message.author.bot || !message.guild) return;
 
-  const member = await message.guild.members.fetch(message.author.id);
-  const hasBlockedRole = BLOCKED_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
+  console.log(`📨 Message from ${message.author.username} in #${message.channel.name}: "${message.content}"`);
+  console.log(`📝 Type: ${message.type}`);
 
-  if (hasBlockedRole) {
-    try {
+  // Skip if there's real message content
+  if (message.content && message.content.trim().length > 0) return;
+
+  try {
+    const member = await message.guild.members.fetch(message.author.id);
+    const hasBlockedRole = BLOCKED_ROLE_IDS.some(id => member.roles.cache.has(id));
+
+    if (hasBlockedRole) {
       await message.delete();
-      await message.author.send(
-        "🚫 Forwarded messages are blocked for your role. Keep chatting and ranking up to unlock this power!"
-      );
-    } catch (err) {
-      console.error("Failed to delete or DM:", err.message);
+      console.log("❌ Deleted empty message from restricted role.");
     }
+  } catch (err) {
+    console.error("⚠️ Error deleting message:", err.message);
   }
 });
 
-client.login(process.env.TOKEN);
-// Keep-alive server for Replit
-const express = require('express');
+// Web server for keep-alive
 const app = express();
+app.get('/', (_, res) => res.send('Bot is online!'));
+app.listen(3000, () => console.log('🌐 Keep-alive server running on port 3000'));
 
-app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(3000, () => console.log('Express server is running.'));
+// Start bot
+client.login(process.env.TOKEN);
