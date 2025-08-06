@@ -21,6 +21,7 @@ const client = new Client({
 
 // Setup webhook client
 const webhook = new WebhookClient({ url: process.env.WEBHOOK_URL });
+console.log("✅ Loaded webhook URL:", process.env.WEBHOOK_URL);
 
 // Role IDs
 const BLOCKED_ROLE_IDS = [
@@ -48,6 +49,11 @@ const LEVEL_MESSAGES = {
 
 client.once(Events.ClientReady, () => {
   console.log(`🚀 Logged in as ${client.user.tag}`);
+
+  // Webhook test on startup (optional - remove if you want)
+  webhook.send({ content: "🔔 Webhook test: bot is online!" })
+    .then(() => console.log("✅ Webhook test message sent."))
+    .catch(err => console.error("❌ Webhook test failed:", err));
 });
 
 client.on(Events.MessageCreate, async (message) => {
@@ -83,7 +89,10 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  console.log(`👀 Role update for ${newMember.user.tag}`);
   const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
+  console.log("🆕 Added roles:", [...addedRoles.keys()]);
+
   for (const [roleId, role] of addedRoles) {
     if (LEVEL_MESSAGES[roleId]) {
       const mention = `<@${newMember.user.id}>`;
