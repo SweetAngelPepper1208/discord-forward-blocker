@@ -1,118 +1,101 @@
-// bot.js
-import { Client, GatewayIntentBits, Events, WebhookClient } from 'discord.js';
-import express from 'express';
+import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import dotenv from 'dotenv';
+import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Setup __dirname for ES module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load env variables
 dotenv.config({ path: path.join(__dirname, '.env') });
 
+// Keep-alive web server for Render
+const app = express();
+app.get('/', (req, res) => res.send('Bot is alive!'));
+app.listen(3000, () => console.log('Keep-alive server running on port 3000'));
+
+// Create bot client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent
-  ]
+  ],
+  partials: [Partials.Channel]
 });
 
-// Setup webhook client
-const webhook = new WebhookClient({ url: process.env.WEBHOOK_URL });
-console.log("✅ Loaded webhook URL:", process.env.WEBHOOK_URL);
+// Level-up role messages
+const ROLE_MESSAGES = {
+  "1399992492568350794": `AHHH OMG!!! {user}<a:HeartPop:1397425476426797066> 
+You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
+You're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic <a:KawaiiBunny_Recolored:1399156026187710560> <a:Flowers:1398259380217970810> 
+You’re cute enough for an Angel to NOTICE — and that’s kinda a big deal <:a_cute_love_snuggle:1400040183063122041><a:kawaii_winged_hearts:1397407675674919022>
+You’ve been lightly sprinkled with holy vibes 💦 so keep radiating those good energies~!!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> 
+Maybe—just maybe—your halo’s loading... 🪽📡
+#BlessedButNotAscended #ARealLifeAngelSeesU <a:pixel_wifi:1397426129391849522><:heartsies:1399307354335612968>`,
 
-// Role IDs
-const BLOCKED_ROLE_IDS = [
-  '1399135278396080238', // First-Time Believer
-  '1399992492568350794', // Blessed Cutie
-  '1399993506759573616'  // Angel in Training
-];
+  "1399993506759573616": `***A new angel has been born! Welcome to the gates of heaven {user}!!!***<a:HeartFlowers:1398261467459096648> 
+You’ve officially been *drafted by Heaven* and are now an **Angel in Training** <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
+Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
+Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
+#NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
+#DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
-const LEVEL_ROLES = {
-  '1399992492568350794': 'Blessed Cutie',        // Level 5
-  '1399993506759573616': 'Angel in Training',   // Level 12
-  '1399994681970004021': 'Angel with Wings',    // Level 20
-  '1399994799334887495': 'Full-Fledged Angel'   // Level 28
+  "1399994681970004021": `***OMG!!! OMG!!! OMG!!! {user} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
+You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218107945> 
+The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218107945> 
+But remember, with great divine power comes great divine responsibility. Don’t abuse the privilege — use your divine gifts for good, angel!<a:RainbowCatBoba:1397426167136518145> <a:HeartPop:1397425476426797066> 
+You’re not just flying; you’re embodying **real angel vibes** now — full of grace, light, and purpose.<a:heartsfloat:1399306141539897406> <:a_cute_love_snuggle:1400040183063122041> <a:heartsfloat:1399306141539897406> 
+You’ve got the divine keys now. Heaven’s on your side — go make it shine!<a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
+#UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
+
+  "1399994799334887495": `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! {user} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
+You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
+No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
+You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
+You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
+#CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
+#RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`
 };
 
-const LEVEL_MESSAGES = {
-  '1399992492568350794': (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066>\nYou just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971>\nYou're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic <a:KawaiiBunny_Recolored:1399156026187710560> <a:Flowers:1398259380217970810>\nYou’ve been lightly sprinkled with holy vibes 💦 so keep radiating those good energies~!!<a:Announcement:1397426113931640893>\nMaybe—just maybe—your halo’s loading... 🪽📡\n#BlessedButNotAscended`,
+const LEVEL_UP_CHANNEL = "1397916231545389096";
 
-  '1399993506759573616': (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***<a:HeartFlowers:1398261467459096648>\nYou’ve officially been *drafted by Heaven* and are now an **Angel in Training**\nDon’t rush the glow-up, you’re doing great, just keep shining! <a:a_pink_hearts:1399307738923663433>\n#NewAngelVibes #DivineInProgress`,
-
-  '1399994681970004021': (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned their very own wings~!!!***<a:MenheraChanFly:1398259676315123723>\nYou’ve unlocked full celestial privileges — wings, power, and the ability to soar.\n#UnleashTheWings #DivineAscension`,
-
-  '1399994799334887495': (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full-Fledged Angel!!!***\nYou’ve unlocked EVERYTHING! wings, power, unlimited privileges, and the full might of Heaven’s elite\n#RealAngelVibes #UnlimitedPower #AngelicElite`
-};
-
-client.once(Events.ClientReady, () => {
-  console.log(`🚀 Logged in as ${client.user.tag}`);
-
-  // Webhook test on startup (optional - remove if you want)
-  webhook.send({ content: "🔔 Webhook test: bot is online!" })
-    .then(() => console.log("✅ Webhook test message sent."))
-    .catch(err => console.error("❌ Webhook test failed:", err));
-});
-
-client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot || !message.guild) return;
-
+// Role change detection
+client.on('guildMemberUpdate', (oldMember, newMember) => {
   try {
-    const member = await message.guild.members.fetch(message.author.id);
-    const hasBlockedRole = BLOCKED_ROLE_IDS.some(roleId => member.roles.cache.has(roleId));
+    const oldRoles = new Set(oldMember.roles.cache.keys());
+    const newRoles = new Set(newMember.roles.cache.keys());
 
-    if (hasBlockedRole) {
-      const isEmptyForwarded = !message.content && message.attachments.size === 0 && message.embeds.length === 0;
-
-      // Delete empty/forwarded messages
-      if (isEmptyForwarded) {
-        await message.delete();
-        console.log("🗑️ Deleted empty (likely forwarded) message.");
-        return;
-      }
-
-      // Delete GIF uploads from device (.gif, .webp, .apng)
-      for (const attachment of message.attachments.values()) {
-        const name = attachment.name?.toLowerCase();
-        if (name && (name.endsWith(".gif") || name.endsWith(".webp") || name.endsWith(".apng"))) {
-          await message.delete();
-          console.log("🗑️ Deleted uploaded animated file.");
-          return;
+    for (const roleId of Object.keys(ROLE_MESSAGES)) {
+      if (!oldRoles.has(roleId) && newRoles.has(roleId)) {
+        const channel = newMember.guild.channels.cache.get(LEVEL_UP_CHANNEL);
+        if (channel && channel.isTextBased()) {
+          channel.send(ROLE_MESSAGES[roleId].replace('{user}', `<@${newMember.id}>`));
         }
       }
     }
   } catch (err) {
-    console.error("⚠️ Error handling message:", err.message);
+    console.error("Error in guildMemberUpdate:", err);
   }
 });
 
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  console.log(`👀 Role update for ${newMember.user.tag}`);
-  const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
-  console.log("🆕 Added roles:", [...addedRoles.keys()]);
+// Forward/GIF blocking
+client.on('messageCreate', (message) => {
+  if (message.author.bot) return;
 
-  for (const [roleId, role] of addedRoles) {
-    if (LEVEL_MESSAGES[roleId]) {
-      const mention = `<@${newMember.user.id}>`;
-      const message = LEVEL_MESSAGES[roleId](mention);
-      try {
-        await webhook.send({ content: message });
-        console.log(`📨 Sent webhook message for ${newMember.user.tag} (${LEVEL_ROLES[roleId]})`);
-      } catch (err) {
-        console.error(`❌ Failed to send webhook message:`, err);
-      }
-    }
+  // Block GIFs
+  if (message.content.match(/https?:\/\/\S+\.(gif|gifv)/i)) {
+    message.delete().catch(() => {});
+    return;
+  }
+
+  // Forward message blocking
+  if (message.reference) {
+    message.delete().catch(() => {});
+    return;
   }
 });
 
-// Keep-alive webserver
-const app = express();
-app.get("/", (_, res) => res.send("Bot is running!"));
-
-app.listen(3000, () => {
-  console.log("🌐 Keep-alive webserver running on port 3000");
-});
-
-client.login(process.env.TOKEN);
+client.login(process.env.BOT_TOKEN);
