@@ -99,3 +99,46 @@ client.on('messageCreate', (message) => {
 });
 
 client.login(process.env.BOT_TOKEN);
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import { Client, GatewayIntentBits } from "discord.js";
+import express from "express";
+
+// ✅ Load .env for local testing
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, ".env") });
+
+// ✅ Debug token before login
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ ERROR: DISCORD_TOKEN is missing! Check your Render Environment Variables.");
+  process.exit(1);
+}
+
+console.log("✅ Token length:", process.env.DISCORD_TOKEN.length);
+
+// ✅ Create bot client
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
+// Example ready log
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+});
+
+// ✅ Login
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+  console.error("❌ Discord login failed:", err.message);
+  process.exit(1);
+});
+
+// ✅ Keep-alive server for Render
+const app = express();
+app.get("/", (req, res) => res.send("Bot is running!"));
+app.listen(3000, () => console.log("🌐 Express server running on port 3000"));
