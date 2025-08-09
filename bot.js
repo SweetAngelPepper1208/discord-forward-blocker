@@ -1,4 +1,3 @@
-// bot.js — copy / paste
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -7,13 +6,16 @@ import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+// --- DEBUG LOG for DISCORD_TOKEN ---
+console.log('DISCORD_TOKEN:', !!process.env.DISCORD_TOKEN ? '[REDACTED]' : 'NOT FOUND');
+
 // --- config ---
 const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 if (!TOKEN) {
-  console.error('❌ Missing DISCORD_TOKEN in .env — stopping.');
+  console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
   process.exit(1);
 }
 
@@ -57,10 +59,6 @@ client.once(Events.ClientReady, () => {
 });
 
 // ---------- MESSAGE HANDLER ----------
-// Blocks for restricted roles:
-//  • forwarded discord links (discord.com/channels/...), cdn.discordapp attachments
-//  • embed-only forwarded messages (empty content + embed(s))
-//  • animated device uploads (.gif, .webp, .apng) — deleted; other attachments left alone
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
