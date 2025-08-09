@@ -1,144 +1,155 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
-import dotenv from 'dotenv';
+// bot.js — copy / paste
+import { Client, GatewayIntentBits, Events } from 'discord.js';
 import express from 'express';
+import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+dotenv.config();
 
-// Load env variables
-dotenv.config({ path: path.join(__dirname, '.env') });
+// --- config ---
+const TOKEN = process.env.DISCORD_TOKEN;
+const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Keep-alive web server for Render
-const app = express();
-app.get('/', (req, res) => res.send('Bot is alive!'));
-app.listen(3000, () => console.log('Keep-alive server running on port 3000'));
+if (!TOKEN) {
+  console.error('❌ Missing DISCORD_TOKEN in .env — stopping.');
+  process.exit(1);
+}
 
-// Create bot client
+// Roles that are still restricted (levels 0,5,12)
+const RESTRICTED_ROLE_IDS = [
+  '1399135278396080238', // First-Time Believer
+  '1399992492568350794', // Blessed Cutie
+  '1399993506759573616'  // Angel in Training
+];
+
+// Level-up messages (you can paste the long messages here)
+const ROLE_MESSAGES = {
+  "1399992492568350794": (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
+You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971>
+You're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic...`,
+
+  "1399993506759573616": (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***<a:HeartFlowers:1398261467459096648>
+You’ve officially been *drafted by Heaven* and are now an **Angel in Training**...`,
+
+  "1399994681970004021": (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned their very own wings~!!!***<a:MenheraChanFly:1398259676315123723>
+You’ve unlocked full celestial privileges — wings, power, and the ability to soar...`,
+
+  "1399994799334887495": (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! ${mention} is now a Full Fledged Angel!!!*** 
+You’ve unlocked EVERYTHING! wings, power, unlimited privileges...`
+};
+// --------------------
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
-  ],
-  partials: [Partials.Channel]
+  ]
 });
 
-// Level-up role messages
-const ROLE_MESSAGES = {
-  "1399992492568350794": `AHHH OMG!!! {user}<a:HeartPop:1397425476426797066> 
-You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
-You're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic <a:KawaiiBunny_Recolored:1399156026187710560> <a:Flowers:1398259380217970810> 
-You’re cute enough for an Angel to NOTICE — and that’s kinda a big deal <:a_cute_love_snuggle:1400040183063122041><a:kawaii_winged_hearts:1397407675674919022>
-You’ve been lightly sprinkled with holy vibes 💦 so keep radiating those good energies~!!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> 
-Maybe—just maybe—your halo’s loading... 🪽📡
-#BlessedButNotAscended #ARealLifeAngelSeesU <a:pixel_wifi:1397426129391849522><:heartsies:1399307354335612968>`,
+// ready
+client.once(Events.ClientReady, () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
+});
 
-  "1399993506759573616": `***A new angel has been born! Welcome to the gates of heaven {user}!!!***<a:HeartFlowers:1398261467459096648> 
-You’ve officially been *drafted by Heaven* and are now an **Angel in Training** <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
-Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
-Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
-#NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
-#DivineInProgress<a:pixel_wifi:1397426129391849522>`,
-
-  "1399994681970004021": `***OMG!!! OMG!!! OMG!!! {user} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
-You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218107945> 
-The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218107945> 
-But remember, with great divine power comes great divine responsibility. Don’t abuse the privilege — use your divine gifts for good, angel!<a:RainbowCatBoba:1397426167136518145> <a:HeartPop:1397425476426797066> 
-You’re not just flying; you’re embodying **real angel vibes** now — full of grace, light, and purpose.<a:heartsfloat:1399306141539897406> <:a_cute_love_snuggle:1400040183063122041> <a:heartsfloat:1399306141539897406> 
-You’ve got the divine keys now. Heaven’s on your side — go make it shine!<a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
-#UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
-
-  "1399994799334887495": `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! {user} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
-You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
-No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
-You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
-You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
-#CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
-#RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`
-};
-
-const LEVEL_UP_CHANNEL = "1397916231545389096";
-
-// Role change detection
-client.on('guildMemberUpdate', (oldMember, newMember) => {
+// ---------- MESSAGE HANDLER ----------
+// Blocks for restricted roles:
+//  • forwarded discord links (discord.com/channels/...), cdn.discordapp attachments
+//  • embed-only forwarded messages (empty content + embed(s))
+//  • animated device uploads (.gif, .webp, .apng) — deleted; other attachments left alone
+client.on(Events.MessageCreate, async (message) => {
   try {
-    const oldRoles = new Set(oldMember.roles.cache.keys());
-    const newRoles = new Set(newMember.roles.cache.keys());
+    if (message.author.bot || !message.guild) return;
 
-    for (const roleId of Object.keys(ROLE_MESSAGES)) {
-      if (!oldRoles.has(roleId) && newRoles.has(roleId)) {
-        const channel = newMember.guild.channels.cache.get(LEVEL_UP_CHANNEL);
-        if (channel && channel.isTextBased()) {
-          channel.send(ROLE_MESSAGES[roleId].replace('{user}', `<@${newMember.id}>`));
+    // debug log
+    console.log(`📨 [${message.guild.name}] ${message.author.tag} -> #${message.channel.name} | contentLen=${(message.content||'').length} embeds=${message.embeds.length} attachments=${message.attachments.size}`);
+
+    // resolve guild member
+    const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
+    if (!member) return;
+
+    const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
+    if (!isRestricted) return; // only enforce on restricted roles
+
+    // regexes for forwarded/attachment links
+    const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
+    const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
+
+    // 1) explicit forwarded message links or cdn links in content
+    if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
+      await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
+      console.log('🗑️ Deleted forwarded link message:', message.id);
+      return;
+    }
+
+    // 2) embed-only messages (common forwarded style: empty content + embed(s))
+    if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
+      await message.delete().catch(err => console.warn('Could not delete embed-only forwarded message:', err.message));
+      console.log('🗑️ Deleted embed-only forwarded message:', message.id);
+      return;
+    }
+
+    // 3) device-uploaded animated attachments (.gif, .webp, .apng)
+    for (const attachment of message.attachments.values()) {
+      const name = (attachment.name || '').toLowerCase();
+      const ct = (attachment.contentType || '').toLowerCase();
+      if (
+        name.endsWith('.gif') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.apng') ||
+        ct.startsWith('image/gif') ||
+        ct.includes('webp') ||
+        ct.includes('apng')
+      ) {
+        await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
+        console.log('🗑️ Deleted animated attachment message:', message.id, 'attachment:', attachment.url);
+        return;
+      }
+    }
+
+    // otherwise do nothing
+  } catch (err) {
+    console.error('Message handler error:', err);
+  }
+});
+
+// ---------- ROLE CHANGE (level-up) HANDLER ----------
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  try {
+    // compute newly added roles
+    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    if (!added.size) return;
+
+    for (const role of added.values()) {
+      if (ROLE_MESSAGES[role.id]) {
+        const mention = `<@${newMember.id}>`;
+        const text = ROLE_MESSAGES[role.id](mention);
+        // fetch channel and send
+        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+        if (ch && ch.isTextBased && ch.isTextBased()) {
+          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
+          console.log(`📣 Sent level-up message for ${newMember.user.tag} (role ${role.name})`);
+        } else {
+          console.warn('Level-up channel not found / not text-based:', LEVEL_UP_CHANNEL);
         }
       }
     }
   } catch (err) {
-    console.error("Error in guildMemberUpdate:", err);
+    console.error('GuildMemberUpdate handler error:', err);
   }
 });
 
-// Forward/GIF blocking
-client.on('messageCreate', (message) => {
-  if (message.author.bot) return;
-
-  // Block GIFs
-  if (message.content.match(/https?:\/\/\S+\.(gif|gifv)/i)) {
-    message.delete().catch(() => {});
-    return;
-  }
-
-  // Forward message blocking
-  if (message.reference) {
-    message.delete().catch(() => {});
-    return;
-  }
-});
-
-client.login(process.env.BOT_TOKEN);
-import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-import { Client, GatewayIntentBits } from "discord.js";
-import express from "express";
-
-// ✅ Load .env for local testing
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.join(__dirname, ".env") });
-
-// ✅ Debug token before login
-if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ ERROR: DISCORD_TOKEN is missing! Check your Render Environment Variables.");
-  process.exit(1);
-}
-
-console.log("✅ Token length:", process.env.DISCORD_TOKEN.length);
-
-// ✅ Create bot client
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
-
-// Example ready log
-client.once("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-});
-
-// ✅ Login
-client.login(process.env.DISCORD_TOKEN).catch(err => {
-  console.error("❌ Discord login failed:", err.message);
-  process.exit(1);
-});
-
-// ✅ Keep-alive server for Render
+// ---------- keepalive webserver ----------
 const app = express();
-app.get("/", (req, res) => res.send("Bot is running!"));
-app.listen(3000, () => console.log("🌐 Express server running on port 3000"));
+app.get('/', (_, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`🌐 Keep-alive server listening on port ${PORT}`));
+
+// login
+client.login(TOKEN).catch(err => {
+  console.error('❌ client.login failed:', err?.message ?? err);
+  process.exit(1);
+});
