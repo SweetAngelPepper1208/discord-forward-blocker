@@ -18,6 +18,48 @@ if (!TOKEN) {
   console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
   process.exit(1);
 }
+import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import express from 'express';
+
+// Load .env locally (won't crash if not present)
+try {
+    await import('dotenv').then(dotenv => dotenv.config());
+} catch (err) {
+    console.log('No local .env file, skipping.');
+}
+
+// Make sure we can see the token
+console.log("DISCORD_TOKEN from env:", process.env.DISCORD_TOKEN ? "FOUND" : "NOT FOUND");
+
+// Stop if no token found
+if (!process.env.DISCORD_TOKEN) {
+    console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
+    process.exit(1);
+}
+
+// Start keep-alive web server for Render
+const app = express();
+app.get('/', (req, res) => res.send('Bot is running.'));
+app.listen(3000, () => console.log("Keep-alive server running"));
+
+// Create Discord client
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    partials: [Partials.Message, Partials.Channel]
+});
+
+client.once('ready', () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+});
+
+// Example message listener
+client.on('messageCreate', message => {
+    if (message.content.toLowerCase() === 'ping') {
+        message.reply('pong!');
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN);
 
 // Roles that are still restricted (levels 0,5,12)
 const RESTRICTED_ROLE_IDS = [
