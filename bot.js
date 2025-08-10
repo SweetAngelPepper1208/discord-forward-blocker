@@ -1,5 +1,5 @@
 // bot.js
-import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -27,6 +27,17 @@ console.log("DISCORD_TOKEN:", process.env.DISCORD_TOKEN ? "[REDACTED]" : "NOT FO
 const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+
+// Example webhook URL — replace this with your real webhook or set LEVEL_UP_WEBHOOK_URL in your .env / Render secret file
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789012345678/EXAMPLE_TOKEN_abcdefghijklmnopqrstuvwxyz';
+
+let levelUpWebhook = null;
+try {
+  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
+  console.log('🔗 Level-up webhook configured (replace the example URL with your real one).');
+} catch (err) {
+  console.warn('⚠️ Could not create WebhookClient:', err?.message ?? err);
+}
 
 if (!TOKEN) {
     console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
@@ -118,7 +129,17 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
         const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-        if (ch?.isTextBased()) {
+
+        // Send via webhook (preferred) so the message doesn't appear as the bot account.
+        if (levelUpWebhook) {
+          await levelUpWebhook.send({ content: text }).catch(async (err) => {
+            console.warn('Could not send via webhook, falling back to channel send:', err?.message ?? err);
+            if (ch?.isTextBased()) {
+              await ch.send({ content: text }).catch(err2 => console.warn('Fallback channel send failed:', err2?.message ?? err2));
+            }
+          });
+        } else if (ch?.isTextBased()) {
+          // fallback to regular channel send if webhook client isn't available
           await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
         }
       }
