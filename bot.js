@@ -28,8 +28,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// ==== ADD YOUR WEBHOOK URL HERE ====
-// Replace with your actual webhook URL from Discord
+// Add your webhook URL here or via .env LEVEL_UP_WEBHOOK_URL
 const WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
 
 if (!TOKEN) {
@@ -79,9 +78,6 @@ You’ve earned your place at the pinnacle. Own it, rule it, and show them what 
 #RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`
 };
 
-// Create webhook client for level-up messages
-const webhookClient = new WebhookClient({ url: WEBHOOK_URL });
-
 // Create Discord client
 const client = new Client({
     intents: [
@@ -93,6 +89,16 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel]
 });
 
+// Create webhook client safely
+let webhookClient;
+try {
+  webhookClient = new WebhookClient({ url: WEBHOOK_URL });
+  console.log('✅ WebhookClient created successfully');
+} catch (e) {
+  console.error('❌ Could not create WebhookClient:', e.message);
+  webhookClient = null;
+}
+
 // Ready event
 client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
@@ -102,7 +108,7 @@ client.once(Events.ClientReady, () => {
 // Store recent role messages to debounce duplicates
 const recentRoleMessages = new Map();
 
-// Role change handler with 2-second debounce and webhook sending
+// Role change handler with 2-second debounce
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -125,15 +131,18 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
+        // Fetch channel to confirm it exists, but send via webhookClient for hidden origin
         const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
 
-        // Send message via webhook to keep bot identity hidden
-        if (ch) {
+        if (webhookClient && ch) {
           await webhookClient.send({
             content: text,
             username: client.user.username,
             avatarURL: client.user.displayAvatarURL(),
           }).catch(err => console.warn('Could not send level-up webhook message:', err.message));
+        } else if (ch?.isTextBased()) {
+          // Fallback: send normally if webhook fails or not configured
+          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
         }
       }
     }
