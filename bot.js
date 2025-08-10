@@ -1,4 +1,3 @@
-// bot.js
 import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -28,21 +27,31 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Example webhook URL — replace this with your real webhook or set LEVEL_UP_WEBHOOK_URL in your .env / Render secret file
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789012345678/EXAMPLE_TOKEN_abcdefghijklmnopqrstuvwxyz';
-
-let levelUpWebhook = null;
-try {
-  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-  console.log('🔗 Level-up webhook configured (replace the example URL with your real one).');
-} catch (err) {
-  console.warn('⚠️ Could not create WebhookClient:', err?.message ?? err);
-}
+// Webhook URL from env or example to replace
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
 
 if (!TOKEN) {
     console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
     process.exit(1);
 }
+
+// Parse webhook URL safely and create WebhookClient
+let levelUpWebhook;
+(() => {
+  try {
+    const url = LEVEL_UP_WEBHOOK_URL.trim();
+    const match = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
+    if (!match) {
+      throw new Error('Webhook URL format is invalid');
+    }
+    const [, id, token] = match;
+    levelUpWebhook = new WebhookClient({ id, token });
+    console.log('✅ Webhook client created successfully');
+  } catch (error) {
+    console.error('❌ Could not create WebhookClient:', error.message);
+    process.exit(1);
+  }
+})();
 
 // Restricted roles
 const RESTRICTED_ROLE_IDS = [
@@ -106,7 +115,7 @@ client.once(Events.ClientReady, () => {
 // Store recent role messages to debounce duplicates
 const recentRoleMessages = new Map();
 
-// Role change handler with 2-second debounce
+// Role change handler with 2-second debounce, sends message via webhook instead of channel.send
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -128,20 +137,10 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
-        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
 
-        // Send via webhook (preferred) so the message doesn't appear as the bot account.
-        if (levelUpWebhook) {
-          await levelUpWebhook.send({ content: text }).catch(async (err) => {
-            console.warn('Could not send via webhook, falling back to channel send:', err?.message ?? err);
-            if (ch?.isTextBased()) {
-              await ch.send({ content: text }).catch(err2 => console.warn('Fallback channel send failed:', err2?.message ?? err2));
-            }
-          });
-        } else if (ch?.isTextBased()) {
-          // fallback to regular channel send if webhook client isn't available
-          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
-        }
+        await levelUpWebhook.send({ content: text }).catch(err => {
+          console.warn('Could not send level-up webhook message:', err.message);
+        });
       }
     }
   } catch (err) {
