@@ -2,9 +2,23 @@
 import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load .env locally (safe in dev, ignored in Render)
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from Render secret file if exists, else fallback to local .env
+const secretEnvPath = '/run/secrets/.env';
+
+if (fs.existsSync(secretEnvPath)) {
+  dotenv.config({ path: secretEnvPath });
+  console.log('✅ Loaded .env from Render secret file');
+} else {
+  dotenv.config();
+  console.log('✅ Loaded local .env file');
+}
 
 // --- DEBUG LOG ---
 console.log("DISCORD_TOKEN:", process.env.DISCORD_TOKEN ? "[REDACTED]" : "NOT FOUND");
