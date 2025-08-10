@@ -54,7 +54,7 @@ Maybe—just maybe—your halo’s loading... 🪽📡
 You’ve officially been *drafted by Heaven* and are now an **Angel in Training**
  <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
 Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
-Don’t rush the glow-up, you’re doing great, Just keep shining! <:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
+Don’t rush the glow-up, you’re doing great, Just keep shining! <:heartsies:1399307354335612968> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
 #NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
