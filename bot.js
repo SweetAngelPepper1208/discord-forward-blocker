@@ -1,4 +1,5 @@
-import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
+// bot.js
+import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -27,31 +28,10 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Webhook URL from env or example to replace
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
-
 if (!TOKEN) {
     console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
     process.exit(1);
 }
-
-// Parse webhook URL safely and create WebhookClient
-let levelUpWebhook;
-(() => {
-  try {
-    const url = LEVEL_UP_WEBHOOK_URL.trim();
-    const match = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
-    if (!match) {
-      throw new Error('Webhook URL format is invalid');
-    }
-    const [, id, token] = match;
-    levelUpWebhook = new WebhookClient({ id, token });
-    console.log('✅ Webhook client created successfully');
-  } catch (error) {
-    console.error('❌ Could not create WebhookClient:', error.message);
-    process.exit(1);
-  }
-})();
 
 // Restricted roles
 const RESTRICTED_ROLE_IDS = [
@@ -115,7 +95,7 @@ client.once(Events.ClientReady, () => {
 // Store recent role messages to debounce duplicates
 const recentRoleMessages = new Map();
 
-// Role change handler with 2-second debounce, sends message via webhook instead of channel.send
+// Role change handler with 2-second debounce
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -137,10 +117,10 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
-
-        await levelUpWebhook.send({ content: text }).catch(err => {
-          console.warn('Could not send level-up webhook message:', err.message);
-        });
+        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+        if (ch?.isTextBased()) {
+          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
+        }
       }
     }
   } catch (err) {
@@ -148,7 +128,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Message handler
+// Message handler (updated to block all media for First-Time Believer)
 client.on(Events.MessageCreate, async (message) => {
     try {
         if (message.author.bot || !message.guild) return;
@@ -158,35 +138,46 @@ client.on(Events.MessageCreate, async (message) => {
         const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
         if (!member) return;
 
+        // Check if user has First-Time Believer role
+        const hasFirstRole = member.roles.cache.has('1399135278396080238'); // First-Time Believer
         const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
         if (!isRestricted) return;
 
-        const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
-        const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
-
-        if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
-            await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
-            return;
-        }
-
-        if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
-            await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
-            return;
-        }
-
-        for (const attachment of message.attachments.values()) {
-            const name = (attachment.name || '').toLowerCase();
-            const ct = (attachment.contentType || '').toLowerCase();
-            if (
-                name.endsWith('.gif') ||
-                name.endsWith('.webp') ||
-                name.endsWith('.apng') ||
-                ct.startsWith('image/gif') ||
-                ct.includes('webp') ||
-                ct.includes('apng')
-            ) {
-                await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
+        // Block all media uploads (attachments) for First-Time Believer ONLY
+        if (hasFirstRole) {
+            if (message.attachments.size > 0) {
+                await message.delete().catch(err => console.warn('Could not delete media from first role:', err.message));
                 return;
+            }
+        } else {
+            // For other restricted roles, block forwarded links only
+            const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
+            const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
+
+            if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
+                await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
+                return;
+            }
+
+            if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
+                await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
+                return;
+            }
+
+            for (const attachment of message.attachments.values()) {
+                const name = (attachment.name || '').toLowerCase();
+                const ct = (attachment.contentType || '').toLowerCase();
+                if (
+                    name.endsWith('.gif') ||
+                    name.endsWith('.webp') ||
+                    name.endsWith('.apng') ||
+                    ct.startsWith('image/gif') ||
+                    ct.includes('webp') ||
+                    ct.includes('apng')
+                ) {
+                    await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
+                    return;
+                }
             }
         }
     } catch (err) {
