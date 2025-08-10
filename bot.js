@@ -1,4 +1,3 @@
-// bot.js
 import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -28,13 +27,31 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Add your webhook URL here or via .env LEVEL_UP_WEBHOOK_URL
-const WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+// Webhook URL from env or example to replace
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz';
 
 if (!TOKEN) {
     console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
     process.exit(1);
 }
+
+// Parse webhook URL safely and create WebhookClient
+let levelUpWebhook;
+(() => {
+  try {
+    const url = LEVEL_UP_WEBHOOK_URL.trim();
+    const match = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
+    if (!match) {
+      throw new Error('Webhook URL format is invalid');
+    }
+    const [, id, token] = match;
+    levelUpWebhook = new WebhookClient({ id, token });
+    console.log('✅ Webhook client created successfully');
+  } catch (error) {
+    console.error('❌ Could not create WebhookClient:', error.message);
+    process.exit(1);
+  }
+})();
 
 // Restricted roles
 const RESTRICTED_ROLE_IDS = [
@@ -89,16 +106,6 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel]
 });
 
-// Create webhook client safely
-let webhookClient;
-try {
-  webhookClient = new WebhookClient({ url: WEBHOOK_URL });
-  console.log('✅ WebhookClient created successfully');
-} catch (e) {
-  console.error('❌ Could not create WebhookClient:', e.message);
-  webhookClient = null;
-}
-
 // Ready event
 client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
@@ -108,7 +115,7 @@ client.once(Events.ClientReady, () => {
 // Store recent role messages to debounce duplicates
 const recentRoleMessages = new Map();
 
-// Role change handler with 2-second debounce
+// Role change handler with 2-second debounce, sends message via webhook instead of channel.send
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -131,19 +138,9 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
-        // Fetch channel to confirm it exists, but send via webhookClient for hidden origin
-        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-
-        if (webhookClient && ch) {
-          await webhookClient.send({
-            content: text,
-            username: client.user.username,
-            avatarURL: client.user.displayAvatarURL(),
-          }).catch(err => console.warn('Could not send level-up webhook message:', err.message));
-        } else if (ch?.isTextBased()) {
-          // Fallback: send normally if webhook fails or not configured
-          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
-        }
+        await levelUpWebhook.send({ content: text }).catch(err => {
+          console.warn('Could not send level-up webhook message:', err.message);
+        });
       }
     }
   } catch (err) {
