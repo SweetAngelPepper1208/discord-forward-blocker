@@ -54,7 +54,7 @@ Maybe—just maybe—your halo’s loading... 🪽📡
 You’ve officially been *drafted by Heaven* and are now an **Angel in Training**
  <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
 Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
-Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
+Don’t rush the glow-up, you’re doing great, Just keep shining! <:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
 #NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
@@ -90,6 +90,42 @@ const client = new Client({
 client.once(Events.ClientReady, () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
+});
+
+// Store recent role messages to debounce duplicates
+const recentRoleMessages = new Map();
+
+// Role change handler with 2-second debounce
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  try {
+    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    if (!added.size) return;
+
+    for (const role of added.values()) {
+      if (ROLE_MESSAGES[role.id]) {
+        const key = `${newMember.id}-${role.id}`;
+        const now = Date.now();
+
+        if (recentRoleMessages.has(key)) {
+          const lastSent = recentRoleMessages.get(key);
+          if (now - lastSent < 2000) { // 2 seconds cooldown
+            continue; // skip duplicate message
+          }
+        }
+
+        recentRoleMessages.set(key, now);
+
+        const mention = `<@${newMember.id}>`;
+        const text = ROLE_MESSAGES[role.id](mention);
+        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+        if (ch?.isTextBased()) {
+          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
+        }
+      }
+    }
+  } catch (err) {
+    console.error('GuildMemberUpdate handler error:', err);
+  }
 });
 
 // Message handler
@@ -135,27 +171,6 @@ client.on(Events.MessageCreate, async (message) => {
         }
     } catch (err) {
         console.error('Message handler error:', err);
-    }
-});
-
-// Role change handler
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-    try {
-        const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-        if (!added.size) return;
-
-        for (const role of added.values()) {
-            if (ROLE_MESSAGES[role.id]) {
-                const mention = `<@${newMember.id}>`;
-                const text = ROLE_MESSAGES[role.id](mention);
-                const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-                if (ch?.isTextBased()) {
-                    await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
-                }
-            }
-        }
-    } catch (err) {
-        console.error('GuildMemberUpdate handler error:', err);
     }
 });
 
