@@ -1,3 +1,4 @@
+// bot.js
 import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -14,6 +15,7 @@ if (fs.existsSync(secretEnvPath)) {
   dotenv.config({ path: secretEnvPath });
   console.log('✅ Loaded .env from Render secret file');
 } else {
+  // fallback to .env in project directory
   dotenv.config({ path: path.join(__dirname, '.env') });
   console.log('✅ Loaded local .env file');
 }
@@ -34,41 +36,50 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-// Parse webhook URL safely and create WebhookClient
-let levelUpWebhook;
-(() => {
+// Create WebhookClient using the url option (fallback to parsing if needed)
+let levelUpWebhook = null;
+try {
+  if (!LEVEL_UP_WEBHOOK_URL) throw new Error('LEVEL_UP_WEBHOOK_URL not set');
+  // use URL constructor (robust)
+  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
+  console.log('✅ WebhookClient created successfully (using URL)');
+} catch (err) {
+  // If building with URL failed, try parsing id/token (compat fallback)
   try {
-    const url = LEVEL_UP_WEBHOOK_URL.trim();
-    const match = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
-    if (!match) {
-      throw new Error('Webhook URL format is invalid');
+    const match = (LEVEL_UP_WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
+    if (match) {
+      const [, id, token] = match;
+      levelUpWebhook = new WebhookClient({ id, token });
+      console.log('✅ WebhookClient created successfully (parsed id/token)');
+    } else {
+      throw err;
     }
-    const [, id, token] = match;
-    levelUpWebhook = new WebhookClient({ id, token });
-    console.log('✅ Webhook client created successfully');
-  } catch (error) {
-    console.error('❌ Could not create WebhookClient:', error.message);
-    process.exit(1);
+  } catch (err2) {
+    console.warn('⚠️ WebhookClient not created:', err2?.message ?? err2);
+    levelUpWebhook = null;
   }
-})();
+}
 
 // Role IDs
 const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
-const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie
+const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
 const ROLE_THIRD = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
 const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
 
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD];
 
-// Example exempt channels — replace with your IDs or environment variables
-const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
-const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+// Example exempt channels — replace the IDs with your real channel IDs (or set env vars EXEMPT_CHANNELS_SECOND/THIRD)
+const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
 
 // Allowed video domains for role 2/3
 const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
 
-// Level-up messages
+// Recognized video extensions (used to detect device-uploaded videos)
+const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
+
+// Level-up messages (full long messages restored from your original)
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -82,7 +93,7 @@ Maybe—just maybe—your halo’s loading... 🪽📡
 You’ve officially been *drafted by Heaven* and are now an **Angel in Training**
  <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
 Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
-Don’t rush the glow-up, you’re doing great, Just keep shining! <:heartsies:1399307354335612968> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
+Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
 #NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
@@ -123,7 +134,7 @@ client.once(Events.ClientReady, () => {
 // Store recent role messages to debounce duplicates
 const recentRoleMessages = new Map();
 
-// Role change handler with 2-second debounce, sends message via webhook
+// Role change handler with 2-second debounce, sends message via webhook (keeps old behavior)
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -146,9 +157,18 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
-        await levelUpWebhook.send({ content: text }).catch(err => {
-          console.warn('Could not send level-up webhook message:', err.message);
-        });
+        // Use webhook (as in your working code)
+        if (levelUpWebhook) {
+          await levelUpWebhook.send({ content: text }).catch(err => {
+            console.warn('Could not send level-up webhook message:', err.message);
+          });
+        } else {
+          // fallback to channel send if webhook unavailable
+          const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+          if (ch?.isTextBased()) {
+            await ch.send({ content: text }).catch(err => console.warn('Fallback channel send failed:', err.message));
+          }
+        }
       }
     }
   } catch (err) {
@@ -156,7 +176,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Message handler — merged rules for all roles
+// Message handler — merged rules for all roles, with video-upload restriction for first 4 roles
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
@@ -169,6 +189,8 @@ client.on(Events.MessageCreate, async (message) => {
     const hasFirst = member.roles.cache.has(ROLE_FIRST);
     const hasSecond = member.roles.cache.has(ROLE_SECOND);
     const hasThird = member.roles.cache.has(ROLE_THIRD);
+    const hasFourth = member.roles.cache.has(ROLE_FOURTH);
+    const hasFifth = member.roles.cache.has(ROLE_FIFTH);
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return;
 
@@ -205,6 +227,23 @@ client.on(Events.MessageCreate, async (message) => {
         ct.includes('apng')
       );
     });
+
+    // NEW: detect device-uploaded video attachments (mp4, mov, mkv, webm, avi, flv, mpeg, mpg, m4v, 3gp, or contentType video/*)
+    const hasVideoAttachment = Array.from(message.attachments.values()).some(att => {
+      const name = (att.name || '').toLowerCase();
+      const ct = (att.contentType || '').toLowerCase();
+      return (
+        ct.startsWith('video/') ||
+        VIDEO_EXTENSIONS_REGEX.test(name)
+      );
+    });
+
+    // BLOCK device-uploaded videos for the first 4 roles (ROLE_FIRST..ROLE_FOURTH)
+    if ((hasFirst || hasSecond || hasThird || hasFourth) && hasVideoAttachment && !hasFifth) {
+      // delete and return — uploading videos from device is reserved for the top reward role (ROLE_FIFTH)
+      await message.delete().catch(err => console.warn('Could not delete device-uploaded video (restricted roles):', err.message));
+      return;
+    }
 
     // 1) First-Time Believer: TEXT ONLY — delete any attachments, links, embeds, forwarded links (we already handled embeds/forwarded)
     if (hasFirst) {
@@ -267,7 +306,7 @@ client.on(Events.MessageCreate, async (message) => {
         }
       }
 
-      // attachments (non-animated) — allowed for this role (as before)
+      // attachments (non-animated, non-video) — allowed for this role (as before)
       return;
     }
 
