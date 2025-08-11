@@ -1,4 +1,3 @@
-// bot.js
 import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -15,7 +14,6 @@ if (fs.existsSync(secretEnvPath)) {
   dotenv.config({ path: secretEnvPath });
   console.log('✅ Loaded .env from Render secret file');
 } else {
-  // fallback to .env in project directory
   dotenv.config({ path: path.join(__dirname, '.env') });
   console.log('✅ Loaded local .env file');
 }
@@ -28,42 +26,51 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Webhook URL from env or example to replace (replace with your real webhook in env)
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+// Webhook URL from env or example to replace
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz';
 
 if (!TOKEN) {
   console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
   process.exit(1);
 }
 
-// Create WebhookClient using the url option (more robust than parsing id/token)
-let levelUpWebhook = null;
-try {
-  if (!LEVEL_UP_WEBHOOK_URL) throw new Error('LEVEL_UP_WEBHOOK_URL not set');
-  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-  console.log('✅ WebhookClient created successfully (using URL)');
-} catch (err) {
-  console.warn('⚠️ WebhookClient not created:', err.message);
-  levelUpWebhook = null;
-}
+// Parse webhook URL safely and create WebhookClient
+let levelUpWebhook;
+(() => {
+  try {
+    const url = LEVEL_UP_WEBHOOK_URL.trim();
+    const match = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
+    if (!match) {
+      throw new Error('Webhook URL format is invalid');
+    }
+    const [, id, token] = match;
+    levelUpWebhook = new WebhookClient({ id, token });
+    console.log('✅ Webhook client created successfully');
+  } catch (error) {
+    console.error('❌ Could not create WebhookClient:', error.message);
+    process.exit(1);
+  }
+})();
 
 // Role IDs
 const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
-const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
+const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie
 const ROLE_THIRD = '1399993506759573616'; // Angel in Training
+const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
+const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
 
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD];
 
-// Example exempt channels — replace the IDs with your real channel IDs (or set env vars EXEMPT_CHANNELS_SECOND/THIRD)
+// Example exempt channels — replace with your IDs or environment variables
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 
 // Allowed video domains for role 2/3
 const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
 
-// Level-up messages (full long messages)
+// Level-up messages
 const ROLE_MESSAGES = {
-  "1399992492568350794": (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
+  [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
 You're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic <a:KawaiiBunny_Recolored:1399156026187710560> <a:Flowers:1398259380217970810> 
 You’re cute enough for an Angel to NOTICE — and that’s kinda a big deal <:a_cute_love_snuggle:1400040183063122041><a:kawaii_winged_hearts:1397407675674919022>
@@ -71,15 +78,15 @@ You’ve been lightly sprinkled with holy vibes 💦 so keep radiating those goo
 Maybe—just maybe—your halo’s loading... 🪽📡
 #BlessedButNotAscended #ARealLifeAngelSeesU <a:pixel_wifi:1397426129391849522><:heartsies:1399307354335612968>`,
 
-  "1399993506759573616": (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***<a:HeartFlowers:1398261467459096648> 
+  [ROLE_THIRD]: (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***<a:HeartFlowers:1398261467459096648> 
 You’ve officially been *drafted by Heaven* and are now an **Angel in Training**
  <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
 Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
-Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
+Don’t rush the glow-up, you’re doing great, Just keep shining! <:heartsies:1399307354335612968> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
 #NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
-  "1399994681970004021": (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
+  [ROLE_FOURTH]: (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
 You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218107945> 
 The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218107945> 
 But remember, with great divine power comes great divine responsibility. Don’t abuse the privilege — use your divine gifts for good, angel!<a:RainbowCatBoba:1397426167136518145> <a:HeartPop:1397425476426797066> 
@@ -87,7 +94,7 @@ You’re not just flying; you’re embodying **real angel vibes** now — full o
 You’ve got the divine keys now. Heaven’s on your side — go make it shine!<a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 #UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
 
-  "1399994799334887495": (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
+  [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
 You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
 You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
@@ -116,7 +123,7 @@ client.once(Events.ClientReady, () => {
 // Store recent role messages to debounce duplicates
 const recentRoleMessages = new Map();
 
-// Role change handler with 2-second debounce, sends message via webhook (with fallback)
+// Role change handler with 2-second debounce, sends message via webhook
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -139,28 +146,9 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
-        // Try sending via webhook first. If it fails, fallback to channel send.
-        if (levelUpWebhook) {
-          try {
-            await levelUpWebhook.send({
-              content: text,
-              username: client.user?.username ?? 'Bot',
-              avatarURL: client.user?.displayAvatarURL?.() ?? undefined,
-              allowedMentions: { parse: ['users'] }
-            });
-            // sent via webhook — done
-            continue;
-          } catch (err) {
-            console.warn('Webhook send failed, falling back to channel send:', err?.message ?? err);
-            // try fallback below
-          }
-        }
-
-        // Fallback: fetch channel and send normally
-        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-        if (ch?.isTextBased()) {
-          await ch.send({ content: text }).catch(err => console.warn('Fallback channel send failed:', err?.message ?? err));
-        }
+        await levelUpWebhook.send({ content: text }).catch(err => {
+          console.warn('Could not send level-up webhook message:', err.message);
+        });
       }
     }
   } catch (err) {
