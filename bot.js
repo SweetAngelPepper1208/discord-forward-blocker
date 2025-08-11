@@ -180,7 +180,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Message handler — enforce restrictions (forward blocking restored; video-device blocking for first 4 roles)
+// Message handler — enforce restrictions (forward blocking restored; device-video blocking for first 4 roles)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
@@ -311,8 +311,9 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
-    // If user has ROLE_FOURTH or ROLE_FIFTH, the above rules mostly don't delete (except device video block for ROLE_FOURTH handled above).
+    // If user has ROLE_FOURTH or ROLE_FIFTH, the above rules mostly don't delete (except device video block for ROLE_FOURTH handled earlier).
     // ROLE_FIFTH is top-tier and exempt from the device-video delete rule.
+
   } catch (err) {
     console.error('Message handler error:', err);
   }
