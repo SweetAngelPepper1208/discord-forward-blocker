@@ -67,12 +67,12 @@ const ROLE_THIRD = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
 const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
 
-// Mark roles that should be subject to message restrictions (we include the first 4 so restrictions + video-block apply)
+// Mark roles that should be subject to message restrictions (the first 4)
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
 // Example exempt channels — replace the IDs with your real channel IDs (or set env vars EXEMPT_CHANNELS_SECOND/THIRD)
-const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
-const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
 
 // Allowed video domains for role 2/3
 const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
@@ -241,7 +241,7 @@ client.on(Events.MessageCreate, async (message) => {
       const name = (att.name || '').toLowerCase();
       const ct = (att.contentType || '').toLowerCase();
       return (
-        ct.startsWith('video/') ||
+        (ct && ct.startsWith('video/')) ||
         VIDEO_EXTENSIONS_REGEX.test(name)
       );
     });
