@@ -1,34 +1,90 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
-import dotenv from 'dotenv';
+// bot.js
+import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
+import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load env variables
-dotenv.config({ path: path.join(__dirname, '.env') });
+// Load .env from Render secret file if exists, else fallback to local .env
+const secretEnvPath = '/run/secrets/.env';
+if (fs.existsSync(secretEnvPath)) {
+  dotenv.config({ path: secretEnvPath });
+  console.log('✅ Loaded .env from Render secret file');
+} else {
+  dotenv.config({ path: path.join(__dirname, '.env') });
+  console.log('✅ Loaded local .env file');
+}
 
-// Keep-alive web server for Render
-const app = express();
-app.get('/', (req, res) => res.send('Bot is alive!'));
-app.listen(3000, () => console.log('Keep-alive server running on port 3000'));
+// --- DEBUG LOG ---
+console.log("DISCORD_TOKEN:", process.env.DISCORD_TOKEN ? "[REDACTED]" : "NOT FOUND");
 
-// Create bot client
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent
-  ],
-  partials: [Partials.Channel]
-});
+// Config
+const TOKEN = process.env.DISCORD_TOKEN;
+const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Level-up role messages
+// Webhook URL from env or example to replace — replace with your webhook URL or set LEVEL_UP_WEBHOOK_URL in env
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+
+if (!TOKEN) {
+  console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
+  process.exit(1);
+}
+
+// Create WebhookClient (try url constructor first, fallback to parsing id/token)
+let levelUpWebhook = null;
+try {
+  if (LEVEL_UP_WEBHOOK_URL) {
+    levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
+    console.log('✅ WebhookClient created (url).');
+  }
+} catch (e) {
+  try {
+    const match = (LEVEL_UP_WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
+    if (match) {
+      const [, id, token] = match;
+      levelUpWebhook = new WebhookClient({ id, token });
+      console.log('✅ WebhookClient created (id/token).');
+    } else {
+      throw new Error('Invalid webhook format');
+    }
+  } catch (err) {
+    console.warn('⚠️ WebhookClient not created:', err?.message ?? err);
+    levelUpWebhook = null;
+  }
+}
+
+// Role IDs
+const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
+const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
+const ROLE_THIRD = '1399993506759573616'; // Angel in Training
+const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
+const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
+
+// Roles to subject to restrictions (first 4; fifth has highest privileges)
+const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
+
+// Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
+const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
+  ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
+  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
+  ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
+  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+
+// Allowed video domains
+const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
+
+// Recognized video extensions (detect device-uploaded videos)
+const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
+
+// Level-up messages (your full, long messages)
 const ROLE_MESSAGES = {
-  "1399992492568350794": `AHHH OMG!!! {user}<a:HeartPop:1397425476426797066> 
+  [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
 You're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic <a:KawaiiBunny_Recolored:1399156026187710560> <a:Flowers:1398259380217970810> 
 You’re cute enough for an Angel to NOTICE — and that’s kinda a big deal <:a_cute_love_snuggle:1400040183063122041><a:kawaii_winged_hearts:1397407675674919022>
@@ -36,14 +92,15 @@ You’ve been lightly sprinkled with holy vibes 💦 so keep radiating those goo
 Maybe—just maybe—your halo’s loading... 🪽📡
 #BlessedButNotAscended #ARealLifeAngelSeesU <a:pixel_wifi:1397426129391849522><:heartsies:1399307354335612968>`,
 
-  "1399993506759573616": `***A new angel has been born! Welcome to the gates of heaven {user}!!!***<a:HeartFlowers:1398261467459096648> 
-You’ve officially been *drafted by Heaven* and are now an **Angel in Training** <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
+  [ROLE_THIRD]: (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***<a:HeartFlowers:1398261467459096648> 
+You’ve officially been *drafted by Heaven* and are now an **Angel in Training**
+ <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
 Your halo’s shining bright, but you can't exactly fly. Those wings… will come with time <a:HeartPop:1397425476426797066> <:a_cute_love_snuggle:1400040183063122041> <a:HeartPop:1397425476426797066> 
 Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
 #NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
-  "1399994681970004021": `***OMG!!! OMG!!! OMG!!! {user} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
+  [ROLE_FOURTH]: (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
 You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218107945> 
 The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218107945> 
 But remember, with great divine power comes great divine responsibility. Don’t abuse the privilege — use your divine gifts for good, angel!<a:RainbowCatBoba:1397426167136518145> <a:HeartPop:1397425476426797066> 
@@ -51,7 +108,7 @@ You’re not just flying; you’re embodying **real angel vibes** now — full o
 You’ve got the divine keys now. Heaven’s on your side — go make it shine!<a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 #UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
 
-  "1399994799334887495": `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! {user} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
+  [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
 You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
 You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
@@ -60,85 +117,266 @@ You’ve earned your place at the pinnacle. Own it, rule it, and show them what 
 #RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`
 };
 
-const LEVEL_UP_CHANNEL = "1397916231545389096";
+// Create Discord client
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Message, Partials.Channel]
+});
 
-// Role change detection
-client.on('guildMemberUpdate', (oldMember, newMember) => {
+// Ready event
+client.once(Events.ClientReady, () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
+});
+
+// Debounce map for level-up messages (2 seconds)
+const recentRoleMessages = new Map();
+const DEBOUNCE_MS = 2000;
+
+// Utility: regexes used multiple places
+const DISCORD_JUMP_LINK = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
+const CDN_ATTACHMENT_LINK = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
+const GENERAL_LINK = /(https?:\/\/[^\s]+)/i;
+
+// Role change handler with 2s debounce, sends via webhook (fallback to channel)
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
-    const oldRoles = new Set(oldMember.roles.cache.keys());
-    const newRoles = new Set(newMember.roles.cache.keys());
+    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    if (!added.size) return;
 
-    for (const roleId of Object.keys(ROLE_MESSAGES)) {
-      if (!oldRoles.has(roleId) && newRoles.has(roleId)) {
-        const channel = newMember.guild.channels.cache.get(LEVEL_UP_CHANNEL);
-        if (channel && channel.isTextBased()) {
-          channel.send(ROLE_MESSAGES[roleId].replace('{user}', `<@${newMember.id}>`));
+    for (const role of added.values()) {
+      if (ROLE_MESSAGES[role.id]) {
+        const key = `${newMember.id}-${role.id}`;
+        const now = Date.now();
+
+        if (recentRoleMessages.has(key)) {
+          const lastSent = recentRoleMessages.get(key);
+          if (now - lastSent < DEBOUNCE_MS) {
+            continue; // skip duplicate message
+          }
+        }
+
+        recentRoleMessages.set(key, now);
+
+        const mention = `<@${newMember.id}>`;
+        const text = ROLE_MESSAGES[role.id](mention);
+
+        if (levelUpWebhook) {
+          await levelUpWebhook.send({
+            content: text,
+            allowedMentions: { parse: ['users'] }
+          }).catch(async (err) => {
+            console.warn('Could not send level-up webhook message:', err?.message ?? err);
+            // fallback to channel send
+            const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+            if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
+          });
+        } else {
+          const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+          if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
         }
       }
     }
   } catch (err) {
-    console.error("Error in guildMemberUpdate:", err);
+    console.error('GuildMemberUpdate handler error:', err);
   }
 });
 
-// Forward/GIF blocking
-client.on('messageCreate', (message) => {
-  if (message.author.bot) return;
-
-  // Block GIFs
-  if (message.content.match(/https?:\/\/\S+\.(gif|gifv)/i)) {
-    message.delete().catch(() => {});
-    return;
+// Helper: detect forwarded messages robustly
+function isForwardedMessage(msg) {
+  const content = (msg.content ?? '').trim();
+  // If content is empty and embeds present, consider forwarded/embed-only
+  if ((!content || content.length === 0) && msg.embeds && msg.embeds.length > 0) {
+    return true;
   }
 
-  // Forward message blocking
-  if (message.reference) {
-    message.delete().catch(() => {});
-    return;
+  // If message contains a discord jump link or a CDN attachments link
+  if (DISCORD_JUMP_LINK.test(content) || CDN_ATTACHMENT_LINK.test(content)) {
+    return true;
   }
-});
 
-client.login(process.env.BOT_TOKEN);
-import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-import { Client, GatewayIntentBits } from "discord.js";
-import express from "express";
+  // Check embeds — embed.url or embed.fields may include jump links
+  for (const embed of msg.embeds || []) {
+    if (!embed) continue;
+    if (embed.url && DISCORD_JUMP_LINK.test(embed.url)) return true;
+    if (embed.description && DISCORD_JUMP_LINK.test(embed.description)) return true;
+    if (embed.fields && Array.isArray(embed.fields)) {
+      for (const field of embed.fields) {
+        if (field && field.value && DISCORD_JUMP_LINK.test(field.value)) return true;
+      }
+    }
+  }
 
-// ✅ Load .env for local testing
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.join(__dirname, ".env") });
-
-// ✅ Debug token before login
-if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ ERROR: DISCORD_TOKEN is missing! Check your Render Environment Variables.");
-  process.exit(1);
+  return false;
 }
 
-console.log("✅ Token length:", process.env.DISCORD_TOKEN.length);
+// Message handler — enforce restrictions (forward blocking restored; device-video blocking for first 4 roles)
+client.on(Events.MessageCreate, async (message) => {
+  try {
+    if (message.author.bot || !message.guild) return;
 
-// ✅ Create bot client
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+    console.log(`📨 [${message.guild.name}] ${message.author.tag} -> #${message.channel?.name ?? message.channelId}`);
+
+    const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
+    if (!member) return;
+
+    const hasFirst = member.roles.cache.has(ROLE_FIRST);
+    const hasSecond = member.roles.cache.has(ROLE_SECOND);
+    const hasThird = member.roles.cache.has(ROLE_THIRD);
+    const hasFourth = member.roles.cache.has(ROLE_FOURTH);
+    const hasFifth = member.roles.cache.has(ROLE_FIFTH);
+    const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
+    if (!isRestricted) return; // not one of the roles we manage
+
+    // === START: exact-forwarding/embed/animated-attachment block (kept behavior) ===
+    if (isForwardedMessage(message)) {
+      // Forwarding is blocked until Angel with Wings (ROLE_FOURTH). If user has ROLE_FOURTH or higher, forwarded allowed.
+      if (!(hasFourth || hasFifth)) {
+        await message.delete().catch(err => console.warn('Could not delete forwarded/link message (forwarding restricted):', err.message));
+        return;
+      }
+    }
+
+    if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
+      // embed-only messages are blocked for restricted roles (unless role allows — we keep this conservative)
+      if (!(hasFourth || hasFifth)) {
+        await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
+        return;
+      }
+    }
+
+    for (const attachment of message.attachments.values()) {
+      const name = (attachment.name || '').toLowerCase();
+      const ct = (attachment.contentType || '').toLowerCase();
+      if (
+        name.endsWith('.gif') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.apng') ||
+        (ct && (ct.startsWith('image/gif') || ct.includes('webp') || ct.includes('apng')))
+      ) {
+        // animated images are blocked for restricted roles
+        await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
+        return;
+      }
+    }
+    // === END: exact block restored ===
+
+    // Additional checks
+    const content = message.content ?? '';
+    const hasAttachment = message.attachments.size > 0;
+    const hasLink = GENERAL_LINK.test(content);
+
+    // Helper to check animated attachments (gif/webp/apng) — defensive (already handled above)
+    const hasAnimatedAttachment = Array.from(message.attachments.values()).some(att => {
+      const name = (att.name || '').toLowerCase();
+      const ct = (att.contentType || '').toLowerCase();
+      return (
+        name.endsWith('.gif') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.apng') ||
+        (ct && (ct.startsWith('image/gif') || ct.includes('webp') || ct.includes('apng')))
+      );
+    });
+
+    // Detect device-uploaded video attachments (mp4, mov, mkv, webm, avi, etc. or contentType video/*)
+    const hasVideoAttachment = Array.from(message.attachments.values()).some(att => {
+      const name = (att.name || '').toLowerCase();
+      const ct = (att.contentType || '').toLowerCase();
+      return (
+        (ct && ct.startsWith('video/')) ||
+        VIDEO_EXTENSIONS_REGEX.test(name)
+      );
+    });
+
+    // BLOCK device-uploaded videos for the first 4 roles (ROLE_FIRST..ROLE_FOURTH); ROLE_FIFTH is exempt
+    if ((hasFirst || hasSecond || hasThird || hasFourth) && hasVideoAttachment && !hasFifth) {
+      await message.delete().catch(err => console.warn('Could not delete device-uploaded video (restricted roles):', err.message));
+      return;
+    }
+
+    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links (we already handled embeds/forwarded)
+    if (hasFirst) {
+      if (hasAttachment || hasLink) {
+        await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
+        return;
+      }
+      // if no attachment/link, allow text
+      return;
+    }
+
+    // 2) Blessed Cutie: can upload pictures and post YouTube links ONLY in EXEMPT_CHANNELS_SECOND
+    if (hasSecond) {
+      // If there's an animated attachment, always delete
+      if (hasAnimatedAttachment) {
+        await message.delete().catch(err => console.warn('Could not delete animated attachment from Blessed Cutie:', err.message));
+        return;
+      }
+
+      // If attachments exist, only allow in exempt channels
+      if (hasAttachment && !EXEMPT_CHANNELS_SECOND.includes(message.channel.id)) {
+        await message.delete().catch(err => console.warn('Could not delete attachment from Blessed Cutie (not exempt channel):', err.message));
+        return;
+      }
+
+      // If link exists, allow only YouTube links and only in exempt channels
+      if (hasLink) {
+        const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => content.includes(domain));
+        if (!(isYoutube && EXEMPT_CHANNELS_SECOND.includes(message.channel.id))) {
+          await message.delete().catch(err => console.warn('Could not delete link from Blessed Cutie (not allowed):', err.message));
+          return;
+        }
+      }
+
+      // passed all Blessed Cutie checks -> allow message
+      return;
+    }
+
+    // 3) Angel in Training: only allow YouTube links in EXEMPT_CHANNELS_THIRD; attachments allowed (non-animated, non-video)
+    if (hasThird) {
+      if (hasAnimatedAttachment) {
+        await message.delete().catch(err => console.warn('Could not delete animated attachment from Angel in Training:', err.message));
+        return;
+      }
+
+      if (hasLink) {
+        const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => content.includes(domain));
+        if (isYoutube) {
+          if (!EXEMPT_CHANNELS_THIRD.includes(message.channel.id)) {
+            await message.delete().catch(err => console.warn('Could not delete youtube link from Angel in Training (not exempt):', err.message));
+            return;
+          } else {
+            return; // allowed
+          }
+        } else {
+          // non-youtube links: delete
+          await message.delete().catch(err => console.warn('Could not delete non-youtube link from Angel in Training:', err.message));
+          return;
+        }
+      }
+
+      // attachments (non-animated, non-video) — allowed for this role
+      return;
+    }
+
+    // If user has ROLE_FOURTH or ROLE_FIFTH, the above role-specific returns don't apply; ROLE_FOURTH still blocked earlier for device video
+    // ROLE_FIFTH is top-tier and exempt from device-video delete rule.
+  } catch (err) {
+    console.error('Message handler error:', err);
+  }
 });
 
-// Example ready log
-client.once("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-});
+// Keep-alive server
+const app = express();
+app.get('/', (_, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`🌐 Keep-alive server listening on port ${PORT}`));
 
-// ✅ Login
-client.login(process.env.DISCORD_TOKEN).catch(err => {
-  console.error("❌ Discord login failed:", err.message);
+// Login
+client.login(TOKEN).catch(err => {
+  console.error('❌ client.login failed:', err?.message ?? err);
   process.exit(1);
 });
-
-// ✅ Keep-alive server for Render
-const app = express();
-app.get("/", (req, res) => res.send("Bot is running!"));
-app.listen(3000, () => console.log("🌐 Express server running on port 3000"));
