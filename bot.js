@@ -15,7 +15,6 @@ if (fs.existsSync(secretEnvPath)) {
   dotenv.config({ path: secretEnvPath });
   console.log('✅ Loaded .env from Render secret file');
 } else {
-  // fallback to .env in project directory
   dotenv.config({ path: path.join(__dirname, '.env') });
   console.log('✅ Loaded local .env file');
 }
@@ -36,26 +35,23 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-// Create WebhookClient using the url option (fallback to parsing if needed)
+// Create WebhookClient (try url constructor first, fallback to parsing id/token)
 let levelUpWebhook = null;
 try {
-  if (!LEVEL_UP_WEBHOOK_URL) throw new Error('LEVEL_UP_WEBHOOK_URL not set');
-  // use URL constructor (robust)
   levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-  console.log('✅ WebhookClient created successfully (using URL)');
-} catch (err) {
-  // If building with URL failed, try parsing id/token (compat fallback)
+  console.log('✅ WebhookClient created (url).');
+} catch (e) {
   try {
     const match = (LEVEL_UP_WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
     if (match) {
       const [, id, token] = match;
       levelUpWebhook = new WebhookClient({ id, token });
-      console.log('✅ WebhookClient created successfully (parsed id/token)');
+      console.log('✅ WebhookClient created (id/token).');
     } else {
-      throw err;
+      throw new Error('Invalid webhook format');
     }
-  } catch (err2) {
-    console.warn('⚠️ WebhookClient not created:', err2?.message ?? err2);
+  } catch (err) {
+    console.warn('⚠️ WebhookClient not created:', err?.message ?? err);
     levelUpWebhook = null;
   }
 }
@@ -67,20 +63,24 @@ const ROLE_THIRD = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
 const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
 
-// Mark roles that should be subject to message restrictions (the first 4)
+// Roles to subject to restrictions (first 4; fifth has highest privileges)
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
-// Example exempt channels — replace the IDs with your real channel IDs (or set env vars EXEMPT_CHANNELS_SECOND/THIRD)
-const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
-const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
+// Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
+const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
+  ? process.env.EXEMPT_CHANNELS_SECOND.split(',') 
+  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
+  ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
+  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 
-// Allowed video domains for role 2/3
+// Allowed video domains
 const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
 
-// Recognized video extensions (used to detect device-uploaded videos)
+// Recognized video extensions (detect device-uploaded videos)
 const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
 
-// Level-up messages (full long messages)
+// Level-up messages (your full, long messages)
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -132,10 +132,11 @@ client.once(Events.ClientReady, () => {
   console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
 });
 
-// Store recent role messages to debounce duplicates
+// Debounce map for level-up messages (2 seconds)
 const recentRoleMessages = new Map();
+const DEBOUNCE_MS = 2000;
 
-// Role change handler with 2-second debounce, sends message via webhook (keeps old behavior)
+// Role change handler with 2s debounce, sends via webhook (fallback to channel)
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
@@ -148,7 +149,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 
         if (recentRoleMessages.has(key)) {
           const lastSent = recentRoleMessages.get(key);
-          if (now - lastSent < 2000) { // 2 seconds cooldown
+          if (now - lastSent < DEBOUNCE_MS) {
             continue; // skip duplicate message
           }
         }
@@ -158,23 +159,19 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
-        // Use webhook (as in your working code); fallback to channel send if webhook fails
         if (levelUpWebhook) {
           await levelUpWebhook.send({
             content: text,
             allowedMentions: { parse: ['users'] }
-          }).catch(err => {
-            console.warn('Could not send level-up webhook message:', err.message);
+          }).catch(async (err) => {
+            console.warn('Could not send level-up webhook message:', err?.message ?? err);
             // fallback to channel send
-            newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).then(ch => {
-              if (ch?.isTextBased()) ch.send({ content: text }).catch(() => {});
-            }).catch(() => {});
+            const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+            if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
           });
         } else {
           const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-          if (ch?.isTextBased()) {
-            await ch.send({ content: text }).catch(err => console.warn('Fallback channel send failed:', err.message));
-          }
+          if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
         }
       }
     }
@@ -183,7 +180,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Message handler — merged rules for all roles, with video-upload restriction and forwarded blocking restored
+// Message handler — enforce restrictions (forward blocking restored; video-device blocking for first 4 roles)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
@@ -199,7 +196,7 @@ client.on(Events.MessageCreate, async (message) => {
     const hasFourth = member.roles.cache.has(ROLE_FOURTH);
     const hasFifth = member.roles.cache.has(ROLE_FIFTH);
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
-    if (!isRestricted) return;
+    if (!isRestricted) return; // not one of the roles we manage
 
     // Regexes
     const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
@@ -230,13 +227,11 @@ client.on(Events.MessageCreate, async (message) => {
         name.endsWith('.gif') ||
         name.endsWith('.webp') ||
         name.endsWith('.apng') ||
-        ct.startsWith('image/gif') ||
-        ct.includes('webp') ||
-        ct.includes('apng')
+        (ct && (ct.startsWith('image/gif') || ct.includes('webp') || ct.includes('apng')))
       );
     });
 
-    // NEW: detect device-uploaded video attachments (mp4, mov, mkv, webm, avi, flv, mpeg, mpg, m4v, 3gp, or contentType video/*)
+    // Detect device-uploaded video attachments (mp4, mov, mkv, webm, avi, etc. or contentType video/*)
     const hasVideoAttachment = Array.from(message.attachments.values()).some(att => {
       const name = (att.name || '').toLowerCase();
       const ct = (att.contentType || '').toLowerCase();
@@ -246,9 +241,8 @@ client.on(Events.MessageCreate, async (message) => {
       );
     });
 
-    // BLOCK device-uploaded videos for the first 4 roles (ROLE_FIRST..ROLE_FOURTH)
+    // BLOCK device-uploaded videos for the first 4 roles (ROLE_FIRST..ROLE_FOURTH); ROLE_FIFTH is exempt
     if ((hasFirst || hasSecond || hasThird || hasFourth) && hasVideoAttachment && !hasFifth) {
-      // delete and return — uploading videos from device is reserved for the top reward role (ROLE_FIFTH)
       await message.delete().catch(err => console.warn('Could not delete device-uploaded video (restricted roles):', err.message));
       return;
     }
@@ -259,7 +253,7 @@ client.on(Events.MessageCreate, async (message) => {
         await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
         return;
       }
-      // if no attachment/link, let text pass
+      // if no attachment/link, allow text
       return;
     }
 
@@ -277,7 +271,7 @@ client.on(Events.MessageCreate, async (message) => {
         return;
       }
 
-      // If link exists, allow only youtube links and only in exempt channels
+      // If link exists, allow only YouTube links and only in exempt channels
       if (hasLink) {
         const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => message.content.includes(domain));
         if (!(isYoutube && EXEMPT_CHANNELS_SECOND.includes(message.channel.id))) {
@@ -290,7 +284,7 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
-    // 3) Angel in Training: only allow YouTube links in EXEMPT_CHANNELS_THIRD
+    // 3) Angel in Training: only allow YouTube links in EXEMPT_CHANNELS_THIRD; attachments allowed (non-animated, non-video)
     if (hasThird) {
       if (hasAnimatedAttachment) {
         await message.delete().catch(err => console.warn('Could not delete animated attachment from Angel in Training:', err.message));
@@ -299,7 +293,6 @@ client.on(Events.MessageCreate, async (message) => {
 
       if (hasLink) {
         const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => message.content.includes(domain));
-        // If it's a youtube link and channel is exempt -> allow; otherwise delete.
         if (isYoutube) {
           if (!EXEMPT_CHANNELS_THIRD.includes(message.channel.id)) {
             await message.delete().catch(err => console.warn('Could not delete youtube link from Angel in Training (not exempt):', err.message));
@@ -314,19 +307,18 @@ client.on(Events.MessageCreate, async (message) => {
         }
       }
 
-      // attachments (non-animated, non-video) — allowed for this role (as before)
+      // attachments (non-animated, non-video) — allowed for this role
       return;
     }
 
-    // For ROLE_FOURTH (Angel with Wings) and ROLE_FIFTH, the above returns won't trigger — they can post per normal rules
-    // (Device-video restriction still blocks ROLE_FOURTH because we checked earlier; ROLE_FIFTH is exempt.)
-
+    // If user has ROLE_FOURTH or ROLE_FIFTH, the above rules mostly don't delete (except device video block for ROLE_FOURTH handled above).
+    // ROLE_FIFTH is top-tier and exempt from the device-video delete rule.
   } catch (err) {
     console.error('Message handler error:', err);
   }
 });
 
-// Keep-alive server (single instance)
+// Keep-alive server
 const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`🌐 Keep-alive server listening on port ${PORT}`));
