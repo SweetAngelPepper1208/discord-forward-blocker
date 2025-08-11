@@ -67,11 +67,12 @@ const ROLE_THIRD = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
 const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
 
-const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD];
+// Mark roles that should be subject to message restrictions (we include the first 4 so restrictions + video-block apply)
+const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
 // Example exempt channels — replace the IDs with your real channel IDs (or set env vars EXEMPT_CHANNELS_SECOND/THIRD)
-const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
-const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '139703469289242637270', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND ? process.env.EXEMPT_CHANNELS_SECOND.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EXEMPT_CHANNELS_THIRD.split(',') : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 
 // Allowed video domains for role 2/3
 const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
@@ -79,7 +80,7 @@ const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
 // Recognized video extensions (used to detect device-uploaded videos)
 const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
 
-// Level-up messages (full long messages restored from your original)
+// Level-up messages (full long messages)
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -157,13 +158,19 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
-        // Use webhook (as in your working code)
+        // Use webhook (as in your working code); fallback to channel send if webhook fails
         if (levelUpWebhook) {
-          await levelUpWebhook.send({ content: text }).catch(err => {
+          await levelUpWebhook.send({
+            content: text,
+            allowedMentions: { parse: ['users'] }
+          }).catch(err => {
             console.warn('Could not send level-up webhook message:', err.message);
+            // fallback to channel send
+            newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).then(ch => {
+              if (ch?.isTextBased()) ch.send({ content: text }).catch(() => {});
+            }).catch(() => {});
           });
         } else {
-          // fallback to channel send if webhook unavailable
           const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
           if (ch?.isTextBased()) {
             await ch.send({ content: text }).catch(err => console.warn('Fallback channel send failed:', err.message));
@@ -176,7 +183,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Message handler — merged rules for all roles, with video-upload restriction for first 4 roles
+// Message handler — merged rules for all roles, with video-upload restriction and forwarded blocking restored
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
@@ -199,13 +206,14 @@ client.on(Events.MessageCreate, async (message) => {
     const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
     const generalLink = /(https?:\/\/[^\s]+)/i;
 
-    // Immediate deletion: forwarded discord links or cdn attachments (for restricted roles)
-    if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
-      await message.delete().catch(err => console.warn('Could not delete forwarded/link message:', err.message));
+    // FORWARDING: Block forwarded Discord links / CDN attachments for users UNTIL they have Angel with Wings (ROLE_FOURTH)
+    const isForwarded = discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content);
+    if ((hasFirst || hasSecond || hasThird) && isForwarded) {
+      await message.delete().catch(err => console.warn('Could not delete forwarded/link message (forwarding restricted):', err.message));
       return;
     }
 
-    // Delete embed-only messages immediately (restricted roles)
+    // Delete embed-only messages immediately for restricted roles
     if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
@@ -245,7 +253,7 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
-    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links, embeds, forwarded links (we already handled embeds/forwarded)
+    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links, embeds (we already handled embeds/forwarded)
     if (hasFirst) {
       if (hasAttachment || hasLink) {
         await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
@@ -309,6 +317,9 @@ client.on(Events.MessageCreate, async (message) => {
       // attachments (non-animated, non-video) — allowed for this role (as before)
       return;
     }
+
+    // For ROLE_FOURTH (Angel with Wings) and ROLE_FIFTH, the above returns won't trigger — they can post per normal rules
+    // (Device-video restriction still blocks ROLE_FOURTH because we checked earlier; ROLE_FIFTH is exempt.)
 
   } catch (err) {
     console.error('Message handler error:', err);
