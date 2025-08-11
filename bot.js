@@ -27,7 +27,7 @@ const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 // Webhook URL from env or example to replace
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz';
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
 
 if (!TOKEN) {
   console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
