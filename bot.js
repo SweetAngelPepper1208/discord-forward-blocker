@@ -36,10 +36,13 @@ if (!TOKEN) {
 }
 
 // Create WebhookClient (try url constructor first, fallback to parsing id/token)
+// If webhook fails to be created we continue and fallback to channel send.
 let levelUpWebhook = null;
 try {
-  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-  console.log('✅ WebhookClient created (url).');
+  if (LEVEL_UP_WEBHOOK_URL) {
+    levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
+    console.log('✅ WebhookClient created (url).');
+  }
 } catch (e) {
   try {
     const match = (LEVEL_UP_WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
@@ -198,7 +201,7 @@ client.on(Events.MessageCreate, async (message) => {
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return; // not one of the roles we manage
 
-    // === START: exact-forwarding/embed/animated-attachment block YOU provided (kept exactly) ===
+    // === START: exact-forwarding/embed/animated-attachment block (restored exactly) ===
     const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
     const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
 
@@ -229,7 +232,7 @@ client.on(Events.MessageCreate, async (message) => {
     }
     // === END: exact block restored ===
 
-    // Additional regexes used further
+    // Additional checks below
     const generalLink = /(https?:\/\/[^\s]+)/i;
 
     const hasAttachment = message.attachments.size > 0;
