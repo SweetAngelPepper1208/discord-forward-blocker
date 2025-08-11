@@ -198,28 +198,44 @@ client.on(Events.MessageCreate, async (message) => {
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return; // not one of the roles we manage
 
-    // Regexes
+    // === START: exact-forwarding/embed/animated-attachment block YOU provided (kept exactly) ===
     const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
     const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
-    const generalLink = /(https?:\/\/[^\s]+)/i;
 
-    // FORWARDING: Block forwarded Discord links / CDN attachments for users UNTIL they have Angel with Wings (ROLE_FOURTH)
-    const isForwarded = discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content);
-    if ((hasFirst || hasSecond || hasThird) && isForwarded) {
-      await message.delete().catch(err => console.warn('Could not delete forwarded/link message (forwarding restricted):', err.message));
+    if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
+      await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
       return;
     }
 
-    // Delete embed-only messages immediately for restricted roles
     if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
     }
 
+    for (const attachment of message.attachments.values()) {
+      const name = (attachment.name || '').toLowerCase();
+      const ct = (attachment.contentType || '').toLowerCase();
+      if (
+        name.endsWith('.gif') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.apng') ||
+        ct.startsWith('image/gif') ||
+        ct.includes('webp') ||
+        ct.includes('apng')
+      ) {
+        await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
+        return;
+      }
+    }
+    // === END: exact block restored ===
+
+    // Additional regexes used further
+    const generalLink = /(https?:\/\/[^\s]+)/i;
+
     const hasAttachment = message.attachments.size > 0;
     const hasLink = generalLink.test(message.content);
 
-    // Helper to check animated attachments (gif/webp/apng)
+    // Helper to check animated attachments (gif/webp/apng) — defensive (already handled above but keep for other checks)
     const hasAnimatedAttachment = Array.from(message.attachments.values()).some(att => {
       const name = (att.name || '').toLowerCase();
       const ct = (att.contentType || '').toLowerCase();
@@ -247,7 +263,7 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
-    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links, embeds (we already handled embeds/forwarded)
+    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links (we already handled embeds/forwarded)
     if (hasFirst) {
       if (hasAttachment || hasLink) {
         await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
