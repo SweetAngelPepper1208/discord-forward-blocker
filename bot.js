@@ -28,31 +28,24 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// Webhook URL from env or example to replace
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+// Webhook URL from env or example to replace (replace with your real webhook in env)
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz';
 
 if (!TOKEN) {
   console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
   process.exit(1);
 }
 
-// Parse webhook URL safely and create WebhookClient
-let levelUpWebhook;
-(() => {
-  try {
-    const url = LEVEL_UP_WEBHOOK_URL.trim();
-    const match = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
-    if (!match) {
-      throw new Error('Webhook URL format is invalid');
-    }
-    const [, id, token] = match;
-    levelUpWebhook = new WebhookClient({ id, token });
-    console.log('✅ Webhook client created successfully');
-  } catch (error) {
-    console.error('❌ Could not create WebhookClient:', error.message);
-    process.exit(1);
-  }
-})();
+// Create WebhookClient using the url option (more robust than parsing id/token)
+let levelUpWebhook = null;
+try {
+  if (!LEVEL_UP_WEBHOOK_URL) throw new Error('LEVEL_UP_WEBHOOK_URL not set');
+  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
+  console.log('✅ WebhookClient created successfully (using URL)');
+} catch (err) {
+  console.warn('⚠️ WebhookClient not created:', err.message);
+  levelUpWebhook = null;
+}
 
 // Role IDs
 const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
@@ -68,7 +61,7 @@ const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD ? process.env.EX
 // Allowed video domains for role 2/3
 const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
 
-// Level-up messages (full long messages restored from your original)
+// Level-up messages (full long messages)
 const ROLE_MESSAGES = {
   "1399992492568350794": (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -146,21 +139,27 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
-        // Attempt webhook send first; fallback to channel send if webhook fails
+        // Try sending via webhook first. If it fails, fallback to channel send.
+        if (levelUpWebhook) {
+          try {
+            await levelUpWebhook.send({
+              content: text,
+              username: client.user?.username ?? 'Bot',
+              avatarURL: client.user?.displayAvatarURL?.() ?? undefined,
+              allowedMentions: { parse: ['users'] }
+            });
+            // sent via webhook — done
+            continue;
+          } catch (err) {
+            console.warn('Webhook send failed, falling back to channel send:', err?.message ?? err);
+            // try fallback below
+          }
+        }
+
+        // Fallback: fetch channel and send normally
         const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-        if (levelUpWebhook && ch) {
-          await levelUpWebhook.send({
-            content: text,
-            username: client.user.username,
-            avatarURL: client.user.displayAvatarURL()
-          }).catch(async (err) => {
-            console.warn('Could not send level-up webhook message:', err?.message ?? err);
-            if (ch?.isTextBased()) {
-              await ch.send({ content: text }).catch(err2 => console.warn('Fallback channel send failed:', err2?.message ?? err2));
-            }
-          });
-        } else if (ch?.isTextBased()) {
-          await ch.send({ content: text }).catch(err => console.warn('Could not send level-up message:', err.message));
+        if (ch?.isTextBased()) {
+          await ch.send({ content: text }).catch(err => console.warn('Fallback channel send failed:', err?.message ?? err));
         }
       }
     }
