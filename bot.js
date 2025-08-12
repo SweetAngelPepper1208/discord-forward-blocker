@@ -59,28 +59,30 @@ try {
 // Role IDs
 const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
 const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
-const ROLE_THIRD = '1399993506759573616'; // Angel in Training
+const ROLE_THIRD = '1399993506759573616'; // Angel in Training (Tenor + YouTube anywhere)
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
 const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
 
-// Roles subject to restrictions (first 4; fifth has highest privileges)
+// Roles to subject to restrictions (first 4; fifth has highest privileges)
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
 // Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
-  ? process.env.EXEMPT_CHANNELS_SECOND.split(',') 
+  ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
   : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
   ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
   : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 
-// Allowed video domains (includes tenor.com now)
-const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be', 'tenor.com'];
+// Allowed domains
+const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
+// For Angel in Training: allow YouTube + Tenor anywhere
+const ALLOWED_THIRD_DOMAINS = ['youtube.com', 'youtu.be', 'tenor.com', 'media.tenor.com'];
 
 // Recognized video extensions (detect device-uploaded videos)
 const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
 
-// Level-up messages (full messages)
+// Level-up messages (your full, long messages)
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -107,7 +109,7 @@ You’ve got the divine keys now. Heaven’s on your side — go make it shine!<
 #UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
 
   [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
-You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
+You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116368697><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
 You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
 You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
@@ -198,32 +200,15 @@ client.on(Events.MessageCreate, async (message) => {
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return; // not one of the roles we manage
 
-    // === START: exact-forwarding/embed/animated-attachment block YOU provided (kept exactly) ===
+    // === START: exact-forwarding/embed/animated-attachment block (kept as you required) ===
     const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
     const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
 
-    // ALSO DELETE message types that represent forwarded messages to block forwarded fully
-    const FORWARDED_TYPES = [
-      19, // add/reply/delete reactions
-      20, // chat input commands
-      21, // thread start message
-      22, // reply
-      23, // chat input commands autocomplete
-      24, // thread starter message
-      25, // context menu commands
-      26, // auto moderation message
-      27, // forum post
-      28, // reply with source message
-      29, // interaction message
-    ];
+    // also use the "type 0 + empty content" forwarding heuristic you supplied
+    const isEmptyContentForward = (message.type === 0) && (!(message.content) || message.content.trim().length === 0);
 
-    if (
-      discordMessageLink.test(message.content) ||
-      cdnAttachmentLink.test(message.content) ||
-      FORWARDED_TYPES.includes(message.type) ||
-      (message.type === 0 && !message.content && !message.embeds.length && !message.attachments.size)
-    ) {
-      await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
+    if (discordMessageLink.test(message.content || '') || cdnAttachmentLink.test(message.content || '') || isEmptyContentForward) {
+      await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
       return;
     }
 
@@ -239,9 +224,7 @@ client.on(Events.MessageCreate, async (message) => {
         name.endsWith('.gif') ||
         name.endsWith('.webp') ||
         name.endsWith('.apng') ||
-        ct.startsWith('image/gif') ||
-        ct.includes('webp') ||
-        ct.includes('apng')
+        (ct && (ct.startsWith('image/gif') || ct.includes('webp') || ct.includes('apng')))
       ) {
         await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
         return;
@@ -253,7 +236,7 @@ client.on(Events.MessageCreate, async (message) => {
     const generalLink = /(https?:\/\/[^\s]+)/i;
 
     const hasAttachment = message.attachments.size > 0;
-    const hasLink = generalLink.test(message.content);
+    const hasLink = generalLink.test(message.content || '');
 
     // Helper to check animated attachments (gif/webp/apng) — defensive (already handled above but keep for other checks)
     const hasAnimatedAttachment = Array.from(message.attachments.values()).some(att => {
@@ -268,101 +251,99 @@ client.on(Events.MessageCreate, async (message) => {
     });
 
     // Detect device-uploaded video attachments (mp4, mov, mkv, webm, avi, etc. or contentType video/*)
-    const hasDeviceVideo = Array.from(message.attachments.values()).some(att => {
+    const hasVideoAttachment = Array.from(message.attachments.values()).some(att => {
       const name = (att.name || '').toLowerCase();
       const ct = (att.contentType || '').toLowerCase();
       return (
-        VIDEO_EXTENSIONS_REGEX.test(name) || (ct && ct.startsWith('video/'))
+        (ct && ct.startsWith('video/')) ||
+        VIDEO_EXTENSIONS_REGEX.test(name)
       );
     });
 
-    // === Now apply rules by role ===
-
-    // 1) First-Time Believer: no images, no links
-    if (hasFirst) {
-      if (hasLink || hasAttachment) {
-        await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
-        return;
-      }
+    // BLOCK device-uploaded videos for the first 4 roles (ROLE_FIRST..ROLE_FOURTH); ROLE_FIFTH is exempt
+    if ((hasFirst || hasSecond || hasThird || hasFourth) && hasVideoAttachment && !hasFifth) {
+      await message.delete().catch(err => console.warn('Could not delete device-uploaded video (restricted roles):', err.message));
       return;
     }
 
-    // 2) Blessed Cutie: pictures only, no GIFs, no videos, youtube links only in exempt channels
+    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links (we already handled embeds/forwarded)
+    if (hasFirst) {
+      if (hasAttachment || hasLink) {
+        await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
+        return;
+      }
+      // if no attachment/link, allow text
+      return;
+    }
+
+    // 2) Blessed Cutie: can upload pictures and post YouTube links ONLY in EXEMPT_CHANNELS_SECOND
     if (hasSecond) {
-      // Delete animated attachments
+      // If there's an animated attachment, always delete
       if (hasAnimatedAttachment) {
         await message.delete().catch(err => console.warn('Could not delete animated attachment from Blessed Cutie:', err.message));
         return;
       }
-      // Delete device-uploaded video attachments
-      if (hasDeviceVideo) {
-        await message.delete().catch(err => console.warn('Could not delete device video from Blessed Cutie:', err.message));
+
+      // If attachments exist, only allow in exempt channels
+      if (hasAttachment && !EXEMPT_CHANNELS_SECOND.includes(message.channel.id)) {
+        await message.delete().catch(err => console.warn('Could not delete attachment from Blessed Cutie (not exempt channel):', err.message));
         return;
       }
-      // If has links and not in exempt channel, delete if not youtube
+
+      // If link exists, allow only YouTube links and only in exempt channels
       if (hasLink) {
-        const allowedYoutube = message.content.includes('youtube.com') || message.content.includes('youtu.be');
-        if (!allowedYoutube || !EXEMPT_CHANNELS_SECOND.includes(message.channel.id)) {
-          await message.delete().catch(err => console.warn('Could not delete non-YouTube or non-exempt link from Blessed Cutie:', err.message));
+        const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => (message.content || '').includes(domain));
+        if (!(isYoutube && EXEMPT_CHANNELS_SECOND.includes(message.channel.id))) {
+          await message.delete().catch(err => console.warn('Could not delete link from Blessed Cutie (not allowed):', err.message));
           return;
         }
       }
+
+      // passed all Blessed Cutie checks -> allow message
       return;
     }
 
-    // 3) Angel in Training: allow youtube & tenor links in exempt channels; pictures allowed; no GIFs or videos
+    // 3) Angel in Training: allow Tenor & YouTube links anywhere; attachments allowed (non-animated, non-video)
     if (hasThird) {
+      // animated attachments disallowed
       if (hasAnimatedAttachment) {
         await message.delete().catch(err => console.warn('Could not delete animated attachment from Angel in Training:', err.message));
         return;
       }
-      if (hasDeviceVideo) {
-        await message.delete().catch(err => console.warn('Could not delete device video from Angel in Training:', err.message));
-        return;
-      }
+
+      // device video already blocked earlier for first 4 roles
+
       if (hasLink) {
-        const isAllowedDomain = ALLOWED_VIDEO_DOMAINS.some(domain => message.content.includes(domain));
-        if (isAllowedDomain) {
-          if (!EXEMPT_CHANNELS_THIRD.includes(message.channel.id)) {
-            await message.delete().catch(err => console.warn('Could not delete allowed domain link from Angel in Training (not exempt):', err.message));
-            return;
-          }
-          return; // allowed link in exempt channel
-        } else {
+        // allow if link is in ALLOWED_THIRD_DOMAINS (YouTube or Tenor) anywhere
+        const isAllowedThird = ALLOWED_THIRD_DOMAINS.some(domain => (message.content || '').includes(domain));
+        if (!isAllowedThird) {
           await message.delete().catch(err => console.warn('Could not delete non-allowed link from Angel in Training:', err.message));
           return;
+        } else {
+          return; // allowed
         }
       }
+
+      // attachments (non-animated, non-video) — allowed for this role
       return;
     }
 
-    // 4) Angel with Wings: allow everything except large files or attachments with disallowed types
-    if (hasFourth) {
-      if (hasAnimatedAttachment) {
-        await message.delete().catch(err => console.warn('Could not delete animated attachment from Angel with Wings:', err.message));
-        return;
-      }
-      // Allow other media
-      return;
-    }
+    // If user has ROLE_FOURTH or ROLE_FIFTH, the above rules mostly don't delete (except device video block for ROLE_FOURTH handled earlier).
+    // ROLE_FIFTH is top-tier and exempt from the device-video delete rule.
 
-    // 5) Full-Fledged Angel: no restrictions
-    if (hasFifth) {
-      return;
-    }
   } catch (err) {
-    console.error('MessageCreate handler error:', err);
+    console.error('Message handler error:', err);
   }
 });
 
-// Keep-alive Express server for Render or other hosts
+// Keep-alive server
 const app = express();
-app.get('/', (req, res) => {
-  res.send('Bot is running!');
-});
-app.listen(PORT, () => {
-  console.log(`🌐 Express server listening on port ${PORT}`);
+app.get('/', (_, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`🌐 Keep-alive server listening on port ${PORT}`));
+
+// Login
+client.login(TOKEN).catch(err => {
+  console.error('❌ client.login failed:', err?.message ?? err);
+  process.exit(1);
 });
 
-// Login to Discord
-client.login(TOKEN);
