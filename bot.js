@@ -1,3 +1,4 @@
+```js
 // bot.js
 import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
 import express from 'express';
@@ -136,6 +137,54 @@ client.once(Events.ClientReady, () => {
 const recentRoleMessages = new Map();
 const DEBOUNCE_MS = 2000;
 
+/**
+ * Debug helper: serialize relevant message fields so you can see how forwarded messages appear.
+ * Toggle by setting environment variable MESSAGE_DEBUG=true (in Render secrets or local .env).
+ */
+function serializeMessageForDebug(message) {
+  const attachments = Array.from(message.attachments.values()).map(a => ({
+    id: a.id,
+    name: a.name,
+    url: a.url,
+    proxyURL: a.proxyURL,
+    contentType: a.contentType,
+    size: a.size
+  }));
+
+  const embeds = (message.embeds || []).map(e => {
+    try {
+      return typeof e.toJSON === 'function' ? e.toJSON() : {
+        title: e.title, description: e.description, url: e.url,
+        author: e.author, footer: e.footer, fields: e.fields
+      };
+    } catch (err) {
+      return { error: 'embed.toJSON failed' };
+    }
+  });
+
+  return {
+    id: message.id,
+    guildId: message.guild?.id ?? null,
+    channelId: message.channel?.id ?? null,
+    author: { id: message.author?.id ?? null, tag: message.author?.tag ?? null, bot: !!message.author?.bot },
+    memberRoles: message.member?.roles?.cache?.map(r => r.id) ?? [],
+    type: message.type, // numeric enum (0 = default)
+    contentLength: (message.content || '').length,
+    content: message.content || '',
+    createdTimestamp: message.createdTimestamp,
+    flags: (() => {
+      try { return message.flags?.toArray ? message.flags.toArray() : message.flags?.value ?? null; } catch { return null; }
+    })(),
+    attachments,
+    embeds,
+    referencedMessageId: message.reference?.messageId ?? null,
+    pinned: !!message.pinned,
+    system: !!message.system,
+    tts: !!message.tts,
+    webhookId: message.webhookId ?? null,
+  };
+}
+
 // Role change handler with 2s debounce, sends via webhook (fallback to channel)
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
@@ -180,35 +229,22 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Helper function to detect forwarded messages more reliably
-function isForwardedMessage(msg) {
-  if (!msg) return false;
-  if (msg.content && msg.content.trim().length > 0) return false; // has content, probably not forwarded
-  if (!msg.embeds || msg.embeds.length === 0) return false; // no embeds, not forwarded
-
-  for (const embed of msg.embeds) {
-    if (!embed) continue;
-
-    if (embed.author?.name && /forwarded/i.test(embed.author.name)) return true;
-    if (embed.footer?.text && /forwarded/i.test(embed.footer.text)) return true;
-
-    if (embed.url && /https?:\/\/discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/.test(embed.url)) return true;
-    if (embed.description && /https?:\/\/discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/.test(embed.description)) return true;
-
-    if (embed.fields && Array.isArray(embed.fields)) {
-      for (const field of embed.fields) {
-        if (field.value && /https?:\/\/discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/.test(field.value)) return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-// Message handler — enforce restrictions and delete forwarded/forbidden content
+// Message handler — enforce restrictions (forward blocking restored; device-video blocking for first 4 roles)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
+
+    // Debug dump (toggle with MESSAGE_DEBUG=true)
+    if (process.env.MESSAGE_DEBUG === 'true') {
+      try {
+        const dump = serializeMessageForDebug(message);
+        console.log('=== MESSAGE DEBUG DUMP START ===');
+        console.log(JSON.stringify(dump, null, 2));
+        console.log('=== MESSAGE DEBUG DUMP END ===');
+      } catch (err) {
+        console.error('Failed to serialize message for debug:', err);
+      }
+    }
 
     console.log(`📨 [${message.guild.name}] ${message.author.tag} -> #${message.channel.name}`);
 
@@ -223,26 +259,16 @@ client.on(Events.MessageCreate, async (message) => {
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return; // not one of the roles we manage
 
-    // === START: new robust forwarded embed detection ===
-    if (isForwardedMessage(message)) {
-      console.log(`Deleting forwarded embedded message from ${message.author.tag} in #${message.channel.name}`);
-      await message.delete().catch(err => console.warn('Could not delete forwarded embedded message:', err.message));
-      return;
-    }
-    // === END forwarded embed detection ===
-
-    // Your original forwarded link & animated embed detection (exact regex you gave)
+    // === START: exact-forwarding/embed/animated-attachment block YOU provided (kept exactly) ===
     const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
     const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
 
     if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
-      console.log(`Deleting forwarded link message from ${message.author.tag} in #${message.channel.name}`);
       await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
       return;
     }
 
     if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
-      console.log(`Deleting embed-only message from ${message.author.tag} in #${message.channel.name}`);
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
     }
@@ -258,31 +284,129 @@ client.on(Events.MessageCreate, async (message) => {
         ct.includes('webp') ||
         ct.includes('apng')
       ) {
-        console.log(`Deleting animated attachment from ${message.author.tag} in #${message.channel.name}`);
         await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
         return;
       }
     }
+    // === END: exact block restored ===
 
-    // --- ADDITIONAL RESTRICTION EXAMPLES BELOW ---
-    // You can add your emoji/media limits per role here as before
-    // (Not shown here because you asked only for forwarded detection integration)
+    // Additional regexes used further
+    const generalLink = /(https?:\/\/[^\s]+)/i;
+
+    const hasAttachment = message.attachments.size > 0;
+    const hasLink = generalLink.test(message.content);
+
+    // Helper to check animated attachments (gif/webp/apng) — defensive (already handled above but keep for other checks)
+    const hasAnimatedAttachment = Array.from(message.attachments.values()).some(att => {
+      const name = (att.name || '').toLowerCase();
+      const ct = (att.contentType || '').toLowerCase();
+      return (
+        name.endsWith('.gif') ||
+        name.endsWith('.webp') ||
+        name.endsWith('.apng') ||
+        (ct && (ct.startsWith('image/gif') || ct.includes('webp') || ct.includes('apng')))
+      );
+    });
+
+    // Detect device-uploaded video attachments (mp4, mov, mkv, webm, avi, etc. or contentType video/*)
+    const hasVideoAttachment = Array.from(message.attachments.values()).some(att => {
+      const name = (att.name || '').toLowerCase();
+      const ct = (att.contentType || '').toLowerCase();
+      return (
+        (ct && ct.startsWith('video/')) ||
+        VIDEO_EXTENSIONS_REGEX.test(name)
+      );
+    });
+
+    // BLOCK device-uploaded videos for the first 4 roles (ROLE_FIRST..ROLE_FOURTH); ROLE_FIFTH is exempt
+    if ((hasFirst || hasSecond || hasThird || hasFourth) && hasVideoAttachment && !hasFifth) {
+      await message.delete().catch(err => console.warn('Could not delete device-uploaded video (restricted roles):', err.message));
+      return;
+    }
+
+    // 1) First-Time Believer: TEXT ONLY — delete any attachments, links (we already handled embeds/forwarded)
+    if (hasFirst) {
+      if (hasAttachment || hasLink) {
+        await message.delete().catch(err => console.warn('Could not delete media/link from First-Time Believer:', err.message));
+        return;
+      }
+      // if no attachment/link, allow text
+      return;
+    }
+
+    // 2) Blessed Cutie: can upload pictures and post YouTube links ONLY in EXEMPT_CHANNELS_SECOND
+    if (hasSecond) {
+      // If there's an animated attachment, always delete
+      if (hasAnimatedAttachment) {
+        await message.delete().catch(err => console.warn('Could not delete animated attachment from Blessed Cutie:', err.message));
+        return;
+      }
+
+      // If attachments exist, only allow in exempt channels
+      if (hasAttachment && !EXEMPT_CHANNELS_SECOND.includes(message.channel.id)) {
+        await message.delete().catch(err => console.warn('Could not delete attachment from Blessed Cutie (not exempt channel):', err.message));
+        return;
+      }
+
+      // If link exists, allow only YouTube links and only in exempt channels
+      if (hasLink) {
+        const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => message.content.includes(domain));
+        if (!(isYoutube && EXEMPT_CHANNELS_SECOND.includes(message.channel.id))) {
+          await message.delete().catch(err => console.warn('Could not delete link from Blessed Cutie (not allowed):', err.message));
+          return;
+        }
+      }
+
+      // passed all Blessed Cutie checks -> allow message
+      return;
+    }
+
+    // 3) Angel in Training: only allow YouTube links in EXEMPT_CHANNELS_THIRD; attachments allowed (non-animated, non-video)
+    if (hasThird) {
+      if (hasAnimatedAttachment) {
+        await message.delete().catch(err => console.warn('Could not delete animated attachment from Angel in Training:', err.message));
+        return;
+      }
+
+      if (hasLink) {
+        const isYoutube = ALLOWED_VIDEO_DOMAINS.some(domain => message.content.includes(domain));
+        if (isYoutube) {
+          if (!EXEMPT_CHANNELS_THIRD.includes(message.channel.id)) {
+            await message.delete().catch(err => console.warn('Could not delete youtube link from Angel in Training (not exempt):', err.message));
+            return;
+          } else {
+            return; // allowed
+          }
+        } else {
+          // non-youtube links: delete
+          await message.delete().catch(err => console.warn('Could not delete non-youtube link from Angel in Training:', err.message));
+          return;
+        }
+      }
+
+      // attachments (non-animated, non-video) — allowed for this role
+      return;
+    }
+
+    // If user has ROLE_FOURTH or ROLE_FIFTH, the above rules mostly don't delete (except device video block for ROLE_FOURTH handled earlier).
+    // ROLE_FIFTH is top-tier and exempt from the device-video delete rule.
 
   } catch (err) {
     console.error('Message handler error:', err);
   }
 });
 
-// Express keep-alive server for Render or other hosts
+// Keep-alive server
 const app = express();
+app.get('/', (_, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`🌐 Keep-alive server listening on port ${PORT}`));
 
-app.get('/', (_req, res) => {
-  res.send('Bot is running');
+// Login
+client.login(TOKEN).catch(err => {
+  console.error('❌ client.login failed:', err?.message ?? err);
+  process.exit(1);
 });
+```
 
-app.listen(PORT, () => {
-  console.log(`✅ Express server started on port ${PORT}`);
-});
-
-// Login Discord client
-client.login(TOKEN);
+Paste this file into your project (replace your existing `bot.js`).
+To enable debug dumps for forwarded messages, set `MESSAGE_DEBUG=true` in your environment (Render secrets or local `.env`) and reproduce a forwarded message — the bot will print a JSON dump of the incoming `Message` object to the console so we can see exactly how it looks and refine the deletion logic if necessary.
