@@ -26,7 +26,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789/abcdefg';
 
 if (!TOKEN) {
   console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
@@ -54,7 +54,7 @@ try {
   }
 }
 
-// Role IDs
+// Role IDs (kept exactly as you provided)
 const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
 const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
 const ROLE_THIRD = '1399993506759573616'; // Angel in Training
@@ -67,7 +67,7 @@ const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
 // Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
-  ? process.env.EXEMPT_CHANNELS_SECOND.split(',') 
+  ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
   : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
   ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
@@ -79,7 +79,7 @@ const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be', 'tenor.com'];
 // Recognized video extensions (detect device-uploaded videos)
 const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
 
-// Level-up messages (full messages)
+// Level-up messages (full messages) — keep your original texts exactly
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -111,7 +111,7 @@ No limits. No boundaries. You’re at the top, the very *essence* of elite, ange
 You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
 You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
 #CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
-#RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`
+#RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`,
 
   [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:1397818023838220298>☁️ ***
 ${mention} you have sinned. You have been silenced.
@@ -207,6 +207,7 @@ client.on(Events.MessageCreate, async (message) => {
     const hasThird = member.roles.cache.has(ROLE_THIRD);
     const hasFourth = member.roles.cache.has(ROLE_FOURTH);
     const hasFifth = member.roles.cache.has(ROLE_FIFTH);
+    const hasSixth = member.roles.cache.has(ROLE_SIXTH);
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return; // not one of the roles we manage
 
@@ -228,21 +229,24 @@ client.on(Events.MessageCreate, async (message) => {
       29, // interaction message
     ];
 
+    const contentStr = (message.content || '');
+
     if (
-      discordMessageLink.test(message.content) ||
-      cdnAttachmentLink.test(message.content) ||
+      discordMessageLink.test(contentStr) ||
+      cdnAttachmentLink.test(contentStr) ||
       FORWARDED_TYPES.includes(message.type) ||
-      (message.type === 0 && !message.content && !message.embeds.length && !message.attachments.size)
+      (message.type === 0 && !contentStr && !message.embeds.length && !message.attachments.size)
     ) {
       await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
       return;
     }
 
-    if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
+    if ((!contentStr || contentStr.trim().length === 0) && message.embeds.length > 0) {
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
     }
 
+    // Early animated attachment removal (gif/webp/apng) — keep exactly as before
     for (const attachment of message.attachments.values()) {
       const name = (attachment.name || '').toLowerCase();
       const ct = (attachment.contentType || '').toLowerCase();
@@ -265,17 +269,17 @@ client.on(Events.MessageCreate, async (message) => {
     const youtubeLink = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/\S+/i;
     const tenorLink = /(https?:\/\/)?(www\.)?tenor\.com\/\S+/i;
 
-    const hasAnyLink = generalLink.test(message.content);
-    const isYoutubeLink = youtubeLink.test(message.content);
-    const isTenorLink = tenorLink.test(message.content);
+    const hasAnyLink = generalLink.test(contentStr);
+    const isYoutubeLink = youtubeLink.test(contentStr);
+    const isTenorLink = tenorLink.test(contentStr);
 
-    // Detect attachments types for blocking
+    // Detect attachments types for blocking (device videos)
     const hasAnimatedOrVideoAttachment = Array.from(message.attachments.values()).some(att => {
       const name = (att.name || '').toLowerCase();
       const ct = (att.contentType || '').toLowerCase();
 
-      // animated gifs/webp/apng block for first 4 roles already handled above, but check for device videos here
-      if (VIDEO_EXTENSIONS_REGEX.test(name) || ct.startsWith('video/')) {
+      // treat device video uploads as disallowed for restricted roles
+      if (VIDEO_EXTENSIONS_REGEX.test(name) || (ct && ct.startsWith('video/'))) {
         return true;
       }
       return false;
@@ -300,7 +304,7 @@ client.on(Events.MessageCreate, async (message) => {
           return;
         }
       } else {
-        // Inside exempt channel: allow pictures + youtube links only (no animated gifs/videos)
+        // Inside exempt channel: allow pictures + youtube links only (no device videos)
         if (hasAnimatedOrVideoAttachment) {
           await message.delete().catch(() => {});
           return;
@@ -315,7 +319,7 @@ client.on(Events.MessageCreate, async (message) => {
 
     // 3) Angel in Training: pics + youtube + tenor gifs anywhere allowed
     if (hasThird && !hasFourth) {
-      // No device-uploaded videos (mp4, mov, etc.) or animated gifs/webp/apng attachments allowed
+      // No device-uploaded videos (mp4, mov, etc.) allowed
       if (hasAnimatedOrVideoAttachment) {
         await message.delete().catch(() => {});
         return;
@@ -334,15 +338,17 @@ client.on(Events.MessageCreate, async (message) => {
         await message.delete().catch(() => {});
         return;
       }
-      // All links allowed
+      // All links allowed for wings (no further checks)
       return;
     }
 
     // 5) Full-Fledged Angel: no restrictions (all media and links allowed)
     if (hasFifth) {
-      // no restrictions
       return;
     }
+
+    // Note: ROLE_SIXTH (silenced) is present in ROLE_MESSAGES for level-ups.
+    // You previously had no explicit "silenced" deletion logic, so we leave behavior unchanged here.
 
   } catch (err) {
     console.error('MessageCreate handler error:', err);
@@ -363,4 +369,3 @@ client.login(TOKEN).catch(err => {
   console.error('Discord login failed:', err);
   process.exit(1);
 });
-
