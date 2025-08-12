@@ -231,29 +231,32 @@ client.on(Events.MessageCreate, async (message) => {
 
     const contentStr = (message.content || '');
 
-    // determine if message is a reply (discord supplies message.reference for replies)
-    const isReply = !!message.reference || message.type === 19 || message.type === 22;
-
-    // We only treat message.type forwarded-like flags as "forwarded" if it's NOT a reply.
-    const isForwardedType = FORWARDED_TYPES.includes(message.type) && !isReply;
-
-    // Only consider embed-only deletion if NOT a reply (user requested replies to be safe)
-    const isEmptyEmbedNoAttachments = (message.type === 0 && !contentStr && !message.embeds.length && !message.attachments.size) && !isReply;
+    // determine if message is a reply (discord supplies message.reference for replies or type 19)
+    const isReply = !!message.reference || message.type === 19;
 
     const hasDiscordLink = discordMessageLink.test(contentStr);
     const hasCdnLink = cdnAttachmentLink.test(contentStr);
 
-    // If any forwarded/link/embed-only condition is present, delete — but replies without actual links/attachments are now safe
-    if (hasDiscordLink || hasCdnLink || isForwardedType || isEmptyEmbedNoAttachments) {
-      // if it's a reply but the reply's text actually contains a discord/cdn link (user pasted it), we still delete
-      // since isForwardedType and isEmptyEmbedNoAttachments were suppressed for replies above, this effectively
-      // prevents normal replies from being deleted unless they contain actual forbidden links.
-      await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
-      return;
+    // If it's a reply: only delete if the reply actually contains a forbidden link (discord link or cdn link)
+    if (isReply) {
+      if (hasDiscordLink || hasCdnLink) {
+        await message.delete().catch(err => console.warn('Could not delete forwarded or restricted reply message:', err.message));
+        return;
+      }
+      // reply and no forbidden link -> allowed to continue (do not treat as forwarded)
+    } else {
+      // Not a reply: treat forwarded types or messages containing discord/cdn links as forwarded
+      const isForwardedType = FORWARDED_TYPES.includes(message.type);
+      const isEmptyEmbedNoAttachments = (message.type === 0 && !contentStr && !message.embeds.length && !message.attachments.size);
+
+      if (isForwardedType || hasDiscordLink || hasCdnLink || isEmptyEmbedNoAttachments) {
+        await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
+        return;
+      }
     }
 
-    if ((!contentStr || contentStr.trim().length === 0) && message.embeds.length > 0) {
-      // keep this check (embed-only) — note: above we skipped embed-only deletion for replies
+    // Additional embed-only check (covers embed-only messages that are not replies)
+    if ((!contentStr || contentStr.trim().length === 0) && message.embeds.length > 0 && !isReply) {
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
     }
