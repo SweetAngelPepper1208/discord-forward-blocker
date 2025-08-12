@@ -60,6 +60,7 @@ const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube 
 const ROLE_THIRD = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
 const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
+const ROLE_SIXTH = '1399999195309408320'; // silenced by heaven
 
 // Roles subject to restrictions (first 4; fifth has highest privileges)
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
@@ -111,6 +112,20 @@ You’re not just an angel, you’re the definition of **angel vibes** — divin
 You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
 #CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 #RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`
+
+  [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:1397818023838220298>☁️ ***
+${mention} you have sinned. You have been silenced.
+Heaven has no place for noisy little sinners like you right now.<a:Chika_whack_whack_whack_FB:1399306320745857045> <a:a_anger:1399306470192840805> 
+Be grateful you're only muted and not cast out entirely, okay~? <:a_cute_love_snuggle:1400040183063122041> <:heartsies:1399307354335612968> 
+Sit there in your divine timeout and reflect on what you’ve done.<:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
+You’ll sit quietly, stripped of your voice, and watch from the digital void unable to interact with the other angels. 🔇 
+If redemption is in your future, perhaps your voice will be returned to you 
+Until then…<a:pinkwingl:1398052283769684102> <:Angry_Angel:1397425835551752253> <a:pinkwingsr:1398052457686372483> 
+**Repent in silence. And remember who showed you mercy.**<a:bloodybrokenheart:1399305645647331399> <a:brokenheart_black:1399305730452099113> 
+#RepentAndWatch<:RetroGameOverLaptop:1397449586142089236> 
+#MutedByTheDivine<a:MuteButton:1397425770980315176> 
+#AngelSeesAll<a:angelheart:1397407694930968698><a:kawaii_winged_hearts:1397407675674919022> 
+#YouShouldBeGrateful<:sad_angel:1397425823077892201>`
 };
 
 // Create Discord client
