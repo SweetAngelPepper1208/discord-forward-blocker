@@ -19,9 +19,6 @@ if (fs.existsSync(secretEnvPath)) {
   console.log('✅ Loaded local .env file');
 }
 
-// DEBUG flag: set DEBUG_MESSAGES=true to print message details (helpful for debugging forwarded messages)
-const DEBUG_MESSAGES = process.env.DEBUG_MESSAGES === 'true' || false;
-
 // --- DEBUG LOG ---
 console.log("DISCORD_TOKEN:", process.env.DISCORD_TOKEN ? "[REDACTED]" : "NOT FOUND");
 
@@ -41,7 +38,6 @@ if (!TOKEN) {
 // Create WebhookClient (try url constructor first, fallback to parsing id/token)
 let levelUpWebhook = null;
 try {
-  if (!LEVEL_UP_WEBHOOK_URL) throw new Error('LEVEL_UP_WEBHOOK_URL not set');
   levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
   console.log('✅ WebhookClient created (url).');
 } catch (e) {
@@ -72,9 +68,8 @@ const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
 // Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
-  ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
+  ? process.env.EXEMPT_CHANNELS_SECOND.split(',') 
   : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
-
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
   ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
   : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
@@ -85,7 +80,7 @@ const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be'];
 // Recognized video extensions (detect device-uploaded videos)
 const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
 
-// Level-up messages (your full, long messages). Keep commas between each entry.
+// Level-up messages (your full, long messages)
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -94,6 +89,7 @@ You’re cute enough for an Angel to NOTICE — and that’s kinda a big deal <:
 You’ve been lightly sprinkled with holy vibes 💦 so keep radiating those good energies~!!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> 
 Maybe—just maybe—your halo’s loading... 🪽📡
 #BlessedButNotAscended #ARealLifeAngelSeesU <a:pixel_wifi:1397426129391849522><:heartsies:1399307354335612968>`,
+
   [ROLE_THIRD]: (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***<a:HeartFlowers:1398261467459096648> 
 You’ve officially been *drafted by Heaven* and are now an **Angel in Training**
  <:handL:1400040307411779584> <a:angelheart:1397407694930968698> <:handR:1400040232698511451> 
@@ -101,6 +97,7 @@ Your halo’s shining bright, but you can't exactly fly. Those wings… will com
 Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixelhearts:1262115128036298824> <a:a_pink_hearts:1399307738923663433> <a:a_afx_heart_explosion:1399307416218107945> 
 #NewAngelVibes    <a:pixel_hearts_flow:1397425574959648768> 
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
+
   [ROLE_FOURTH]: (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
 You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218107945> 
 The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218107945> 
@@ -108,6 +105,7 @@ But remember, with great divine power comes great divine responsibility. Don’t
 You’re not just flying; you’re embodying **real angel vibes** now — full of grace, light, and purpose.<a:heartsfloat:1399306141539897406> <:a_cute_love_snuggle:1400040183063122041> <a:heartsfloat:1399306141539897406> 
 You’ve got the divine keys now. Heaven’s on your side — go make it shine!<a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 #UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
+
   [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
 You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
@@ -187,7 +185,6 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
 
-    // Lightweight log
     console.log(`📨 [${message.guild.name}] ${message.author.tag} -> #${message.channel.name}`);
 
     const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
@@ -201,28 +198,28 @@ client.on(Events.MessageCreate, async (message) => {
     const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
     if (!isRestricted) return; // not one of the roles we manage
 
-    // === START: exact-forwarding/embed/animated-attachment block you wanted (kept exactly) ===
+    // === EARLY TEST DELETE: delete "forwarded" blank messages (type 0, empty content, no embeds, no attachments)
+    // This is intentional as a strict test per your request.
+    if (
+      message.type === 0 &&
+      (!(message.content) || (message.content || '').length === 0) &&
+      message.embeds.length === 0 &&
+      message.attachments.size === 0
+    ) {
+      await message.delete().catch(err => console.warn('Could not delete empty forwarded message (test rule):', err.message));
+      return;
+    }
+    // === END early test delete ===
+
+    // === START: exact-forwarding/embed/animated-attachment block (kept) ===
     const discordMessageLink = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
     const cdnAttachmentLink = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
 
-    // Debugging: optionally print how bot sees forwarded-like messages
-    if (DEBUG_MESSAGES && (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content) || (message.type === 0 && (!message.content || message.content.length === 0)))) {
-      console.log('--- DEBUG FORWARDED CHECK ---');
-      console.log('message.type:', message.type);
-      console.log('content length:', message.content?.length ?? 0);
-      console.log('has embeds:', message.embeds.length);
-      console.log('attachments:', Array.from(message.attachments.values()).map(a => ({ name: a.name, contentType: a.contentType, url: a.url })));
-      console.log('raw content:', message.content);
-      console.log('-----------------------------');
-    }
-
-    // Delete forwarded link or cdn attachments (original behavior)
     if (discordMessageLink.test(message.content) || cdnAttachmentLink.test(message.content)) {
       await message.delete().catch(err => console.warn('Could not delete forwarded link:', err.message));
       return;
     }
 
-    // Delete embed-only messages immediately (for restricted roles)
     if ((!message.content || message.content.trim().length === 0) && message.embeds.length > 0) {
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
@@ -235,13 +232,15 @@ client.on(Events.MessageCreate, async (message) => {
         name.endsWith('.gif') ||
         name.endsWith('.webp') ||
         name.endsWith('.apng') ||
-        (ct && (ct.startsWith('image/gif') || ct.includes('webp') || ct.includes('apng')))
+        ct.startsWith('image/gif') ||
+        ct.includes('webp') ||
+        ct.includes('apng')
       ) {
         await message.delete().catch(err => console.warn('Could not delete animated attachment:', err.message));
         return;
       }
     }
-    // === END: exact block restored ===
+    // === END exact block ===
 
     // Additional regexes used further
     const generalLink = /(https?:\/\/[^\s]+)/i;
@@ -249,7 +248,7 @@ client.on(Events.MessageCreate, async (message) => {
     const hasAttachment = message.attachments.size > 0;
     const hasLink = generalLink.test(message.content);
 
-    // Helper to check animated attachments (gif/webp/apng) — defensive (already handled above but keep for checks)
+    // Helper to check animated attachments (gif/webp/apng) — defensive (already handled above but keep for other checks)
     const hasAnimatedAttachment = Array.from(message.attachments.values()).some(att => {
       const name = (att.name || '').toLowerCase();
       const ct = (att.contentType || '').toLowerCase();
