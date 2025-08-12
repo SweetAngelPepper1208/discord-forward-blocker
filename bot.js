@@ -106,7 +106,7 @@ You’ve got the divine keys now. Heaven’s on your side — go make it shine!<
 #UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
 
   [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
-You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_spa rkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
+You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
 You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
 You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
@@ -231,27 +231,29 @@ client.on(Events.MessageCreate, async (message) => {
 
     const contentStr = (message.content || '');
 
+    // determine if message is a reply (discord supplies message.reference for replies)
+    const isReply = !!message.reference || message.type === 19 || message.type === 22;
+
+    // We only treat message.type forwarded-like flags as "forwarded" if it's NOT a reply.
+    const isForwardedType = FORWARDED_TYPES.includes(message.type) && !isReply;
+
+    // Only consider embed-only deletion if NOT a reply (user requested replies to be safe)
+    const isEmptyEmbedNoAttachments = (message.type === 0 && !contentStr && !message.embeds.length && !message.attachments.size) && !isReply;
+
     const hasDiscordLink = discordMessageLink.test(contentStr);
     const hasCdnLink = cdnAttachmentLink.test(contentStr);
-    const isForwardedType = FORWARDED_TYPES.includes(message.type);
-    const isEmptyEmbedNoAttachments = (message.type === 0 && !contentStr && !message.embeds.length && !message.attachments.size);
-    const isReply = !!message.reference;
 
-    // If any forwarded/link/embed-only condition is present, delete — BUT skip if it's a pure reply (message.reference)
-    // and the message text does NOT actually contain a discord link or cdn attachment link.
+    // If any forwarded/link/embed-only condition is present, delete — but replies without actual links/attachments are now safe
     if (hasDiscordLink || hasCdnLink || isForwardedType || isEmptyEmbedNoAttachments) {
-      // Allow normal replies that don't actually include a pasted discord/cdn link
-      if (isReply && !hasDiscordLink && !hasCdnLink && !isEmptyEmbedNoAttachments && !isForwardedType) {
-        // it's a reply and there's no actual discord/cdn link or embed-empty condition — treat as normal reply
-        // do nothing (don't delete)
-      } else {
-        // otherwise proceed to delete as before
-        await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
-        return;
-      }
+      // if it's a reply but the reply's text actually contains a discord/cdn link (user pasted it), we still delete
+      // since isForwardedType and isEmptyEmbedNoAttachments were suppressed for replies above, this effectively
+      // prevents normal replies from being deleted unless they contain actual forbidden links.
+      await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
+      return;
     }
 
     if ((!contentStr || contentStr.trim().length === 0) && message.embeds.length > 0) {
+      // keep this check (embed-only) — note: above we skipped embed-only deletion for replies
       await message.delete().catch(err => console.warn('Could not delete embed-only message:', err.message));
       return;
     }
