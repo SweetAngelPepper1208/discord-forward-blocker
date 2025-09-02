@@ -1,105 +1,84 @@
 // bot.js
-import { Client, GatewayIntentBits, WebhookClient } from 'discord.js';
+import { Client, GatewayIntentBits, Events, WebhookClient } from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// =======================
-// Environment & Debug
-// =======================
+// --- Setup __dirname for ES modules ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- Load .env ---
+dotenv.config({ path: path.join(__dirname, '.env') });
+console.log('🟡 Loading .env file...');
+
+// --- Read environment variables ---
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
-const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || 'undefined';
+const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL;
 const PORT = process.env.PORT || 3000;
 const DEBUG_MESSAGES = process.env.DEBUG_MESSAGES === 'true';
 
-console.log('🟡 Loading .env file...');
 console.log('✅ .env loaded successfully (if present)');
 console.log('--- ENV & runtime info ---');
-console.log(`DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ length ' + DISCORD_TOKEN.length : '❌ MISSING'}`);
-console.log(`WEBHOOK_URL: ${WEBHOOK_URL ? '✅ found' : '❌ MISSING'}`);
-console.log(`LEVEL_UP_CHANNEL: ${LEVEL_UP_CHANNEL}`);
+console.log(`DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ length ' + DISCORD_TOKEN.length : '❌ missing'}`);
+console.log(`WEBHOOK_URL: ${WEBHOOK_URL ? '✅ found' : '❌ missing'}`);
+console.log(`LEVEL_UP_CHANNEL: ${LEVEL_UP_CHANNEL || '❌ missing'}`);
 console.log(`PORT: ${PORT}`);
 console.log(`DEBUG_MESSAGES: ${DEBUG_MESSAGES}`);
 
-// =======================
-// Express server (keep-alive for Render)
-// =======================
+// --- Express server for Render ---
 const app = express();
-app.get('/', (req, res) => res.send('Bot is running ✅'));
+app.get('/', (req, res) => res.send('Discord bot is running!'));
 app.listen(PORT, () => console.log(`🌐 Express server running on port ${PORT}`));
 
-// =======================
-// Discord Client Setup
-// =======================
-console.log('🟡 Initializing Discord client...');
+// --- Create Discord client ---
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
-// =======================
-// Webhook Setup
-// =======================
+// --- Webhook for level-ups ---
 let webhookClient;
 if (WEBHOOK_URL) {
-  try {
     webhookClient = new WebhookClient({ url: WEBHOOK_URL });
     console.log('✅ WebhookClient created.');
-  } catch (err) {
-    console.error('❌ Failed to create WebhookClient:', err);
-  }
 } else {
-  console.warn('⚠️ WEBHOOK_URL not provided. Level-up messages will not be sent.');
+    console.warn('❌ WEBHOOK_URL not set, level-up messages will not work.');
 }
 
-// =======================
-// Client Event Listeners
-// =======================
-client.on('ready', () => {
-  console.log(`✅ Discord client ready! Logged in as ${client.user.tag}`);
-});
-
-client.on('error', (error) => {
-  console.error('❌ Discord client error:', error);
-});
-
-client.on('shardError', (error) => {
-  console.error('❌ Discord shard error:', error);
-});
-
-// =======================
-// Login with debug
-// =======================
-console.log('🌐 Attempting Discord login...');
-client.login(DISCORD_TOKEN)
-  .then(() => console.log('🔑 Login attempt sent.'))
-  .catch(err => console.error('❌ Login failed:', err));
-
-// =======================
-// Example Level-Up function
-// =======================
-function sendLevelUpMessage(userTag, level) {
-  if (!webhookClient) return;
-  const messages = {
-    5: `AHHH OMG!!! ${userTag} <a:HeartPop:1397425476426797066> You just leveled up to a Blessed Cutie!!`,
-    12: `***A new angel has been born! Welcome to the gates of heaven ${userTag}!!!***`,
-    20: `***OMG!!! OMG!!! OMG!!! ${userTag} just earned their very own wings~!!!***`,
-    28: `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${userTag} is now a Full Fledged Angel!!!***`
-  };
-  const msg = messages[level];
-  if (msg) {
-    webhookClient.send(msg)
-      .then(() => DEBUG_MESSAGES && console.log(`🌟 Level-up message sent for ${userTag}, level ${level}`))
-      .catch(err => console.error('❌ Failed to send level-up message:', err));
-  }
-}
-
-// Example usage (for testing)
+// --- Discord client debug logging ---
 if (DEBUG_MESSAGES) {
-  setTimeout(() => sendLevelUpMessage('TestUser#0001', 5), 5000);
-  setTimeout(() => sendLevelUpMessage('TestUser#0001', 12), 10000);
+    client.on('debug', msg => console.log('🔍 Discord debug:', msg));
+    client.on('warn', msg => console.warn('⚠️ Discord warning:', msg));
 }
+
+// --- Discord events ---
+client.once(Events.ClientReady, () => {
+    console.log(`✅ Discord client ready! Logged in as ${client.user.tag}`);
+});
+
+// --- Optional: level-up example event ---
+client.on(Events.MessageCreate, async message => {
+    if (message.content === '!levelup' && webhookClient) {
+        await webhookClient.send({
+            content: `🎉 Congratulations <@${message.author.id}>! You leveled up!`
+        });
+        console.log(`🎉 Sent level-up message for ${message.author.tag}`);
+    }
+});
+
+// --- Attempt Discord login ---
+(async () => {
+    try {
+        console.log('🌐 Attempting Discord login...');
+        await client.login(DISCORD_TOKEN);
+        console.log('✅ Login attempt finished.');
+    } catch (err) {
+        console.error('❌ Discord login failed:', err);
+    }
+})();
