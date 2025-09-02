@@ -1,152 +1,102 @@
 // bot.js
-import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
-import express from 'express';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { Client, GatewayIntentBits, WebhookClient, Events } from "discord.js";
+import express from "express";
+import dotenv from "dotenv";
 
-// ---------- Resolve __dirname / __filename ----------
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Load environment variables
+dotenv.config();
+console.log("✅ Loaded .env file");
 
-// ---------- Load environment ----------
-const secretEnvPath = '/run/secrets/.env';
-if (fs.existsSync(secretEnvPath)) {
-  dotenv.config({ path: secretEnvPath });
-  console.log('✅ Loaded .env from Render secret file');
-} else {
-  dotenv.config({ path: path.join(__dirname, '.env') });
-  console.log('✅ Loaded local .env file');
+// --- Check environment variables ---
+console.log("🛠 DEBUG: Environment variables check");
+console.log("DISCORD_TOKEN exists:", !!process.env.DISCORD_TOKEN);
+console.log("LEVEL_UP_CHANNEL exists:", !!process.env.LEVEL_UP_CHANNEL);
+console.log("LEVEL_UP_WEBHOOK_URL exists:", !!process.env.LEVEL_UP_WEBHOOK_URL);
+console.log("DEBUG_MESSAGES:", process.env.DEBUG_MESSAGES);
+if (process.env.DISCORD_TOKEN) {
+  console.log(
+    "Token length check (should be ~59–72):",
+    process.env.DISCORD_TOKEN.length
+  );
 }
 
-// ---------- Environment variables ----------
-const TOKEN = process.env.DISCORD_TOKEN;
-const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-const LEVEL_UP_WEBHOOK_URL = process.env.WEBHOOK_URL || '';
-const DEBUG_MESSAGES = (process.env.DEBUG_MESSAGES || 'true').toLowerCase() === 'true';
-
-// ---------- Basic checks ----------
-console.log('🛠 DEBUG: Environment variables check');
-console.log('DISCORD_TOKEN exists:', !!TOKEN);
-console.log('LEVEL_UP_CHANNEL exists:', !!LEVEL_UP_CHANNEL);
-console.log('LEVEL_UP_WEBHOOK_URL exists:', !!LEVEL_UP_WEBHOOK_URL);
-console.log('DEBUG_MESSAGES:', DEBUG_MESSAGES);
-console.log('Token length check (should be ~59–72):', TOKEN?.length);
-
-// ---------- Create WebhookClient ----------
-let levelUpWebhook = null;
-if (LEVEL_UP_WEBHOOK_URL) {
+// --- Create Webhook Client ---
+let webhookClient;
+if (process.env.LEVEL_UP_WEBHOOK_URL) {
   try {
-    levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-    console.log('✅ WebhookClient created.');
+    webhookClient = new WebhookClient({
+      url: process.env.LEVEL_UP_WEBHOOK_URL,
+    });
+    console.log("✅ WebhookClient created.");
   } catch (err) {
-    console.warn('⚠️ Could not create WebhookClient:', err?.message || err);
+    console.error("❌ Failed to create WebhookClient:", err);
   }
+} else {
+  console.error("❌ LEVEL_UP_WEBHOOK_URL not set in .env");
 }
 
-// ---------- Level-up role messages ----------
-const ROLE_SECOND = '1399992492568350794';
-const ROLE_THIRD = '1399993506759573616';
-const ROLE_FOURTH = '1399994681970004021';
-const ROLE_FIFTH = '1399994799334887495';
-const ROLE_MESSAGES = {
-  [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention} You just leveled up to a Blessed Cutie! 🌸✨`,
-  [ROLE_THIRD]: (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!!!***`,
-  [ROLE_FOURTH]: (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned their very own wings~!!!***`,
-  [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***`,
-};
-
-// ---------- Create Discord client ----------
+// --- Create Discord Client ---
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Message, Partials.Channel],
 });
 
-// ---------- Debug and error handling ----------
-process.on('unhandledRejection', (reason) => console.error('🧨 UNHANDLED REJECTION:', reason));
-process.on('uncaughtException', (err) => console.error('💥 UNCAUGHT EXCEPTION:', err));
+// --- Login the bot ---
+console.log("🌐 Attempting Discord login...");
 
-client.on('debug', (info) => {
-  if (DEBUG_MESSAGES) console.log('🛠 DISCORD DEBUG:', info);
+client.login(process.env.DISCORD_TOKEN)
+  .then(() => {
+    console.log("✅ Login successful, waiting for 'ready'...");
+  })
+  .catch((error) => {
+    console.error("❌ Discord login failed:", error);
+    process.exit(1); // exit so Render shows failed deploy instead of hanging
+  });
+
+// --- On ready ---
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
 });
-client.on('shardError', (error) => console.error('💥 Shard error:', error));
-client.on('error', (error) => console.error('💥 Client error:', error));
-client.on('warn', (warning) => console.warn('⚠️ Client warning:', warning));
 
-// ---------- Ready event ----------
-client.once(Events.ClientReady, () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`ℹ️ Level-up channel ID: ${LEVEL_UP_CHANNEL}`);
-});
+// --- Simulated Level Up Listener ---
+// Replace with your XP/level system integration
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
 
-// ---------- Watchdog ----------
-setTimeout(() => {
-  if (!client.isReady()) {
-    console.warn('⏳ Bot not ready after 30s. Check token, intents, or network.');
+  const content = message.content.toLowerCase();
+
+  if (content.includes("!level5")) {
+    await webhookClient.send(
+      `AHHH OMG!!! ${message.author}<a:HeartPop:1397425476426797066> You just leveled up to a Blessed Cutie!!`
+    );
   }
-}, 30000);
 
-// ---------- Role change handler ----------
-const recentRoleMessages = new Map();
-const DEBOUNCE_MS = 2000;
+  if (content.includes("!level12")) {
+    await webhookClient.send(
+      `***A new angel has been born! Welcome to the gates of heaven ${message.author}!!!***`
+    );
+  }
 
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  try {
-    const added = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
-    if (!added.size) return;
+  if (content.includes("!level20")) {
+    await webhookClient.send(
+      `***OMG!!! OMG!!! OMG!!! ${message.author} just earned there very own wings~!!!***`
+    );
+  }
 
-    for (const role of added.values()) {
-      if (ROLE_MESSAGES[role.id]) {
-        const key = `${newMember.id}-${role.id}`;
-        const now = Date.now();
-
-        if (recentRoleMessages.has(key) && now - recentRoleMessages.get(key) < DEBOUNCE_MS) {
-          if (DEBUG_MESSAGES) console.log(`🟨 Debounced role message for ${newMember.user.tag} role=${role.id}`);
-          continue;
-        }
-
-        recentRoleMessages.set(key, now);
-        const mention = `<@${newMember.id}>`;
-        const text = ROLE_MESSAGES[role.id](mention);
-
-        if (DEBUG_MESSAGES) console.log(`📣 Sending role-up message for ${newMember.user.tag} role=${role.id}`);
-
-        if (levelUpWebhook) {
-          await levelUpWebhook.send({ content: text, allowedMentions: { parse: ['users'] } }).catch(async (err) => {
-            console.warn('Could not send webhook message:', err?.message || err);
-            const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-            if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
-          });
-        } else {
-          const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-          if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
-        }
-      }
-    }
-  } catch (err) {
-    console.error('GuildMemberUpdate handler error:', err);
+  if (content.includes("!level28")) {
+    await webhookClient.send(
+      `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${message.author} is now a Full Fledged Angel!!!***`
+    );
   }
 });
 
-// ---------- Express keep-alive ----------
+// --- Express Keep-Alive Server ---
 const app = express();
-app.get('/', (req, res) => res.send('Angel bot alive!'));
-app.listen(PORT, () => console.log(`🌐 Express server started on port ${PORT}`));
-
-// ---------- Login ----------
-if (!TOKEN) {
-  console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
-  process.exit(1);
-}
-console.log('🌐 Attempting Discord login...');
-client.login(TOKEN).catch((err) => {
-  console.error('❌ Discord login failed:', err);
-  process.exit(1);
-});
+const PORT = process.env.PORT || 3000;
+app.get("/", (req, res) => res.send("Bot is running."));
+app.listen(PORT, () =>
+  console.log(`🌐 Express server started on port ${PORT}`)
+);
