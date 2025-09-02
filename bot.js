@@ -26,7 +26,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789/abcdefghijklmnopqrstuvwxyz';
 
 if (!TOKEN) {
   console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
@@ -263,8 +263,34 @@ const app = express();
 app.get('/', (req, res) => res.send('Bot is alive!'));
 app.listen(PORT, () => console.log(`✅ Express server listening on port ${PORT}`));
 
-// Login
-client.login(TOKEN).catch(err => {
-  console.error('Failed to login:', err);
-  process.exit(1);
+// ----------------------
+// Debugged login section
+// ----------------------
+console.log("✅ Starting bot...");
+
+// Show token length so you can verify token is being passed (value itself is not printed)
+if (!TOKEN) {
+  console.error("❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?");
+} else {
+  console.log("✅ DISCORD_TOKEN found, length:", TOKEN.length);
+  console.log("Attempting login...");
+}
+
+// Helpful client-level logging for troubleshooting
+client.on('error', (err) => {
+  console.error('Client error:', err);
+});
+client.on('warn', (info) => {
+  console.warn('Client warning:', info);
+});
+client.on('shardError', (err) => {
+  console.error('Shard error:', err);
+});
+
+// Attempt login and surface any rejection errors
+client.login(TOKEN).then(() => {
+  console.log('✅ Login request sent (awaiting ready event).');
+}).catch((err) => {
+  console.error('❌ Login failed (rejected promise):', err);
+  // Do not crash the process automatically here; leave logs for debugging.
 });
