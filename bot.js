@@ -67,7 +67,7 @@ const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
 // Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
-  ? process.env.EXEMPT_CHANNELS_SECOND.split(',') 
+  ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
   : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
   ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
@@ -286,11 +286,17 @@ client.on('warn', (info) => {
 client.on('shardError', (err) => {
   console.error('Shard error:', err);
 });
+client.on('disconnect', (event) => {
+  console.warn('Client disconnected:', event);
+});
 
 // Attempt login and surface any rejection errors
-client.login(TOKEN).then(() => {
-  console.log('✅ Login request sent (awaiting ready event).');
-}).catch((err) => {
-  console.error('❌ Login failed (rejected promise):', err);
-  // Do not crash the process automatically here; leave logs for debugging.
-});
+client.login(TOKEN)
+  .then(() => {
+    console.log('✅ Login request sent (awaiting ready event).');
+  })
+  .catch((err) => {
+    console.error('❌ Login failed (rejected promise):', err);
+    if (err && err.code) console.error('Error code:', err.code);
+    if (err && err.message) console.error('Error message:', err.message);
+  });
