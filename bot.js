@@ -1,11 +1,10 @@
-// bot.js — Full Super Debug Version for Render
-import { Client, GatewayIntentBits, Events, WebhookClient } from 'discord.js';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import WebSocket from 'ws';
+// bot.js — Discord bot with level-up messages & moderation
+import { Client, GatewayIntentBits, Events, WebhookClient, Partials } from 'discord.js';
 import express from 'express';
+import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // ---------- __dirname ----------
 const __filename = fileURLToPath(import.meta.url);
@@ -13,63 +12,62 @@ const __dirname = path.dirname(__filename);
 
 // ---------- Load environment ----------
 dotenv.config();
-console.log('🛠 DEBUG: Environment variables check');
-console.log('DISCORD_TOKEN exists:', !!process.env.DISCORD_TOKEN);
-console.log('LEVEL_UP_CHANNEL exists:', !!process.env.LEVEL_UP_CHANNEL);
-console.log('LEVEL_UP_WEBHOOK_URL exists:', !!process.env.LEVEL_UP_WEBHOOK_URL);
-console.log('DEBUG_LOGS:', process.env.DEBUG_LOGS);
-
-// ---------- Token ----------
+const DEBUG_MESSAGES = (process.env.DEBUG_MESSAGES || 'true').toLowerCase() === 'true';
 const TOKEN = process.env.DISCORD_TOKEN;
-if (!TOKEN) {
-  console.error('❌ DISCORD_TOKEN missing! Check Render environment variables.');
-  process.exit(1);
-}
-console.log('Token length check (should be ~59–72):', TOKEN.length);
+const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
+const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// ---------- Exempt channels ----------
+// Optional exempt channels
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
   ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
   : [];
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
   ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
   : [];
+
+// ---------- Debug check ----------
+console.log('🛠 Environment check');
+console.log('DISCORD_TOKEN exists:', !!TOKEN);
+console.log('LEVEL_UP_CHANNEL exists:', !!LEVEL_UP_CHANNEL);
+console.log('WEBHOOK_URL exists:', !!WEBHOOK_URL);
+console.log('DEBUG_MESSAGES:', DEBUG_MESSAGES);
 console.log('Exempt channels (Blessed Cutie):', EXEMPT_CHANNELS_SECOND);
 console.log('Exempt channels (Angel in Training):', EXEMPT_CHANNELS_THIRD);
 
-// ---------- Level-up Webhook ----------
+if (!TOKEN) {
+  console.error('❌ DISCORD_TOKEN missing!');
+  process.exit(1);
+}
+
+// ---------- Create WebhookClient ----------
 let levelUpWebhook = null;
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL;
-if (LEVEL_UP_WEBHOOK_URL) {
+if (WEBHOOK_URL) {
   try {
-    levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-    console.log('✅ WebhookClient created (LEVEL_UP_WEBHOOK_URL)');
+    levelUpWebhook = new WebhookClient({ url: WEBHOOK_URL });
+    console.log('✅ WebhookClient created.');
   } catch (err) {
     console.warn('⚠️ Could not create WebhookClient:', err?.message ?? err);
   }
 }
 
-// ---------- Network connectivity test ----------
-const DISCORD_GATEWAY = 'wss://gateway.discord.gg/?v=10&encoding=json';
-console.log(`🌐 Testing connection to Discord gateway: ${DISCORD_GATEWAY}`);
+// ---------- Role IDs ----------
+const ROLE_FIRST = '1399135278396080238';
+const ROLE_SECOND = '1399992492568350794';
+const ROLE_THIRD = '1399993506759573616';
+const ROLE_FOURTH = '1399994681970004021';
+const ROLE_FIFTH = '1399994799334887495';
+const ROLE_SIXTH = '1399999195309408320';
+const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
-let wsOpened = false;
-const wsTest = new WebSocket(DISCORD_GATEWAY);
-
-wsTest.on('open', () => {
-  wsOpened = true;
-  console.log('✅ WebSocket connection to Discord gateway succeeded!');
-  wsTest.close();
-});
-
-wsTest.on('error', (err) => console.error('❌ WebSocket connection failed:', err));
-wsTest.on('close', (code, reason) => console.log(`ℹ️ WebSocket test closed (code=${code}, reason=${reason || 'none'})`));
-
-setTimeout(() => {
-  if (!wsOpened) {
-    console.warn('⏳ WebSocket test did not open within 10s — check Render network/firewall.');
-  }
-}, 10000);
+// ---------- Level-up messages ----------
+const ROLE_MESSAGES = {
+  [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention} You leveled up to Blessed Cutie! 🌸`,
+  [ROLE_THIRD]: (mention) => `***A new angel has been born! Welcome to the gates of heaven ${mention}!***`,
+  [ROLE_FOURTH]: (mention) => `***OMG!!! ${mention} just earned their very own wings~!!!***`,
+  [ROLE_FIFTH]: (mention) => `***${mention} is now a Full-Fledged Angel!***`,
+  [ROLE_SIXTH]: (mention) => `***${mention} has been silenced by Heaven.***`,
+};
 
 // ---------- Create Discord client ----------
 const client = new Client({
@@ -79,64 +77,61 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
+  partials: [Partials.Message, Partials.Channel],
 });
 
-// ---------- Process-level error handlers ----------
-process.on('unhandledRejection', (reason, promise) => console.error('🧨 UNHANDLED REJECTION:', reason));
+// ---------- Process-level debug ----------
+process.on('unhandledRejection', (reason) => console.error('🧨 UNHANDLED REJECTION:', reason));
 process.on('uncaughtException', (err) => console.error('💥 UNCAUGHT EXCEPTION:', err));
 
-// ---------- Client debug logging ----------
-client.on('debug', (info) => { if (process.env.DEBUG_LOGS === 'true') console.log('⚡ DEBUG EVENT:', info); });
-client.on('warn', (warn) => console.warn('⚡ CLIENT WARNING:', warn));
-client.on('error', (err) => console.error('⚡ CLIENT ERROR:', err));
-client.on('shardError', (err) => console.error('⚡ SHARD ERROR:', err));
-client.on('raw', (packet) => { if (process.env.DEBUG_LOGS === 'true') console.log('🛰 RAW WS EVENT:', JSON.stringify(packet, null, 2)); });
-
-// ---------- Client lifecycle events ----------
-let readyFired = false;
+// ---------- Client Ready ----------
 client.once(Events.ClientReady, () => {
-  readyFired = true;
-  console.log('✅ ClientReady fired!');
-  console.log('User:', client.user.tag, 'ID:', client.user.id);
-  console.log('Ping:', client.ws.ping);
+  console.log('✅ Logged in as', client.user.tag);
+  console.log('ℹ️ Level-up channel ID:', LEVEL_UP_CHANNEL);
 });
 
-client.on('invalidated', () => console.warn('⚠️ Client session invalidated — token may be wrong or revoked.'));
-client.on('disconnect', (event) => console.warn('⚠️ Client disconnected:', event));
-
-// ---------- Watchdog ----------
-setTimeout(() => {
-  if (!readyFired) {
-    console.warn(
-      '⏳ Bot not ready after 30s. Possible causes:\n' +
-      '- Invalid token\n' +
-      '- Privileged intents not enabled\n' +
-      '- Discord gateway blocked\n' +
-      '- Network/firewall issues in Render'
-    );
-  }
-}, 30000);
-
-// ---------- Optional TEST_ONLY_LOGIN ----------
-const TEST_ONLY_LOGIN = process.env.TEST_ONLY_LOGIN === 'true';
-
-// ---------- Login ----------
-console.log('✅ Attempting Discord login...');
-client.login(TOKEN)
-  .then(() => {
-    console.log('✅ client.login() promise resolved (login attempt sent)');
-    if (TEST_ONLY_LOGIN) {
-      console.log('🟢 TEST_ONLY_LOGIN enabled — exiting after login attempt.');
-      process.exit(0);
-    }
-  })
-  .catch((err) => {
-    console.error('❌ Discord login failed. Full error:', err);
-    process.exit(1);
-  });
-
-// ---------- Express keep-alive server ----------
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+// ---------- Express keep-alive ----------
 const app = express();
 app.get('/', (req, res) => res.send('Angel bot alive!'));
 app.listen(PORT, () => console.log(`🌐 Express server started on port ${PORT}`));
+
+// ---------- Login ----------
+console.log('✅ Starting bot...');
+client.login(TOKEN).catch((err) => {
+  console.error('❌ Discord login failed:', err);
+  process.exit(1);
+});
+
+// ---------- GuildMemberUpdate / Role messages ----------
+const recentRoleMessages = new Map();
+const DEBOUNCE_MS = 2000;
+
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  try {
+    const added = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
+    if (!added.size) return;
+
+    for (const role of added.values()) {
+      if (!ROLE_MESSAGES[role.id]) continue;
+
+      const key = `${newMember.id}-${role.id}`;
+      const now = Date.now();
+      if (recentRoleMessages.has(key) && now - recentRoleMessages.get(key) < DEBOUNCE_MS) continue;
+      recentRoleMessages.set(key, now);
+
+      const mention = `<@${newMember.id}>`;
+      const text = ROLE_MESSAGES[role.id](mention);
+
+      if (levelUpWebhook) {
+        await levelUpWebhook.send({ content: text, allowedMentions: { parse: ['users'] } }).catch(() => {});
+      } else {
+        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+        if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
+      }
+
+      DEBUG_MESSAGES && console.log(`📣 Sent role-up message for ${newMember.user.tag} role=${role.id}`);
+    }
+  } catch (err) {
+    console.error('GuildMemberUpdate handler error:', err);
+  }
+});
