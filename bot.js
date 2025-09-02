@@ -1,87 +1,86 @@
-import { Client, GatewayIntentBits, Events, WebhookClient } from "discord.js";
+// bot.js
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import express from "express";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Resolve __dirname for dotenv
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load .env
-dotenv.config();
-const {
-  DISCORD_TOKEN,
-  WEBHOOK_URL,
-  LEVEL_UP_CHANNEL,
-  PORT = 3000,
-  DEBUG_MESSAGES,
-} = process.env;
+console.log("🟡 Loading .env file...");
+const envResult = dotenv.config({ path: path.join(__dirname, ".env") });
 
-// Debug environment
-console.log("✅ Loaded .env file (if present)");
-console.log("--- ENV & runtime info ---");
-console.log("Node version:", process.version);
-console.log("Platform:", process.platform);
-console.log("PID:", process.pid);
-console.log("PORT (effective):", PORT);
-console.log("DISCORD_TOKEN present:", !!DISCORD_TOKEN);
-console.log("WEBHOOK_URL present:", !!WEBHOOK_URL);
-console.log("LEVEL_UP_CHANNEL present:", !!LEVEL_UP_CHANNEL);
-console.log("DEBUG_MESSAGES:", DEBUG_MESSAGES);
-console.log("Token length (chars):", DISCORD_TOKEN ? DISCORD_TOKEN.length : "MISSING");
-
-// 🔎 Step 1: Verify token with Discord REST API
-(async () => {
-  try {
-    console.log("🌐 Testing token against Discord REST API...");
-    const res = await fetch("https://discord.com/api/v10/users/@me", {
-      headers: { Authorization: `Bot ${DISCORD_TOKEN}` },
-    });
-    if (!res.ok) {
-      console.error("❌ Token check failed:", res.status, await res.text());
-    } else {
-      const data = await res.json();
-      console.log("✅ Token is valid. Logged in as:", `${data.username}#${data.discriminator}`, "ID:", data.id);
-    }
-  } catch (err) {
-    console.error("❌ Error testing token:", err);
-  }
-})();
-
-// 🔎 Step 2: Setup WebhookClient
-let webhookClient = null;
-if (WEBHOOK_URL) {
-  try {
-    webhookClient = new WebhookClient({ url: WEBHOOK_URL });
-    console.log("✅ WebhookClient created (WEBHOOK_URL provided).");
-  } catch (err) {
-    console.error("❌ Failed to create WebhookClient:", err);
-  }
+if (envResult.error) {
+  console.error("❌ Failed to load .env file:", envResult.error);
 } else {
-  console.warn("⚠️ WEBHOOK_URL not set. Webhook features disabled.");
+  console.log("✅ .env file loaded successfully");
 }
 
-// 🔎 Step 3: Setup Discord Client with ALL intents
+// Env vars
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
+const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || "";
+const PORT = process.env.PORT || 3000;
+const DEBUG_MESSAGES = process.env.DEBUG_MESSAGES === "true";
+
+// Debug env check
+console.log("🟡 Environment variables check:");
+console.log("DISCORD_TOKEN:", DISCORD_TOKEN ? `✅ length ${DISCORD_TOKEN.length}` : "❌ MISSING");
+console.log("WEBHOOK_URL:", WEBHOOK_URL ? "✅ found" : "⚠️ empty");
+console.log("LEVEL_UP_CHANNEL:", LEVEL_UP_CHANNEL || "⚠️ empty");
+console.log("PORT:", PORT);
+console.log("DEBUG_MESSAGES:", DEBUG_MESSAGES);
+
+// Stop if missing token
+if (!DISCORD_TOKEN) {
+  console.error("❌ No DISCORD_TOKEN found. Cannot continue.");
+  process.exit(1);
+}
+
+// Init client
+console.log("🟡 Initializing Discord client...");
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
-console.log("🌐 Attempting Discord login using DISCORD_TOKEN from env...");
-client.login(DISCORD_TOKEN).catch((err) => {
-  console.error("❌ Discord login failed:", err);
+// Core events
+client.once("ready", () => {
+  console.log("✅ Bot logged in successfully!");
+  console.log(`🤖 Logged in as: ${client.user.tag} (ID: ${client.user.id})`);
 });
 
-// 🔎 Step 4: Events
-client.once(Events.ClientReady, (readyClient) => {
-  console.log(`✅ Discord client ready! Logged in as ${readyClient.user.tag} (ID: ${readyClient.user.id})`);
-});
-
+// Debugging & errors
 client.on("error", (err) => console.error("❌ Client error:", err));
+client.on("warn", (info) => console.warn("⚠️ Warning:", info));
 client.on("shardError", (err) => console.error("❌ Shard error:", err));
-client.on("invalidated", () => console.error("❌ Client session invalidated!"));
+client.on("invalidated", () => console.error("❌ Client session invalidated! Reconnect needed."));
+client.on("rateLimit", (info) => console.warn("⏱️ Rate limit hit:", info));
+client.on("debug", (msg) => console.log("🔍 Debug:", msg));
 
-// 🔎 Step 5: Express keep-alive
+// Message logger if enabled
+if (DEBUG_MESSAGES) {
+  client.on("messageCreate", (msg) => {
+    console.log(`💬 [${msg.guild?.name || "DM"}] #${msg.channel?.name || "?"} | ${msg.author.tag}: ${msg.content}`);
+  });
+}
+
+// Express keep-alive
 const app = express();
-app.get("/", (req, res) => res.send("Bot is running!"));
-app.listen(PORT, () => console.log(`🌐 Express server started on port ${PORT}`));
+app.get("/", (req, res) => res.send("✅ Bot is running"));
+app.listen(PORT, () => {
+  console.log(`🌐 Express server running on port ${PORT}`);
+});
+
+// Attempt login
+console.log("🟡 Attempting Discord login...");
+client.login(DISCORD_TOKEN).catch((err) => {
+  console.error("❌ Login failed:", err);
+});
