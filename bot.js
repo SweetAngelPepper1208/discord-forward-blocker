@@ -1,15 +1,22 @@
 // bot.js
-import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
+import {
+  Client,
+  GatewayIntentBits,
+  Events,
+  Partials,
+  WebhookClient,
+} from 'discord.js';
 import express from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// ---------- Resolve __dirname / __filename ----------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env from Render secret file if exists, else fallback to local .env
+// ---------- Load environment (.env from secret or local) ----------
 const secretEnvPath = '/run/secrets/.env';
 if (fs.existsSync(secretEnvPath)) {
   dotenv.config({ path: secretEnvPath });
@@ -19,21 +26,25 @@ if (fs.existsSync(secretEnvPath)) {
   console.log('✅ Loaded local .env file');
 }
 
-console.log("DISCORD_TOKEN:", process.env.DISCORD_TOKEN ? "[REDACTED]" : "NOT FOUND");
+console.log('DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '[REDACTED]' : 'NOT FOUND');
 
-// Config
+// ---------- Config ----------
 const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+const LEVEL_UP_WEBHOOK_URL =
+  process.env.LEVEL_UP_WEBHOOK_URL ||
+  'https://discord.com/api/webhooks/123456789/abcdefghijklmnopqrstuvwxyz';
 
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789/abcdefghijklmnopqrstuvwxyz';
+// Optional: toggle very-verbose logs via env
+const DEBUG_LOGS = (process.env.DEBUG_LOGS || 'true').toLowerCase() === 'true';
 
 if (!TOKEN) {
-  console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
+  console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
   process.exit(1);
 }
 
-// Create WebhookClient (try url constructor first, fallback to parsing id/token)
+// ---------- Create WebhookClient (url or id/token) ----------
 let levelUpWebhook = null;
 try {
   levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
@@ -54,32 +65,47 @@ try {
   }
 }
 
-// Role IDs
-const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
-const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
-const ROLE_THIRD = '1399993506759573616'; // Angel in Training
-const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
-const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
-const ROLE_SIXTH = '1399999195309408320'; // silenced by heaven
+// ---------- Role IDs ----------
+const ROLE_FIRST = '1399135278396080238';   // First-Time Believer (text only)
+const ROLE_SECOND = '1399992492568350794';  // Blessed Cutie (pictures + youtube in exempt channels)
+const ROLE_THIRD = '1399993506759573616';   // Angel in Training (pics + youtube + tenor anywhere)
+const ROLE_FOURTH = '1399994681970004021';  // Angel with Wings
+const ROLE_FIFTH = '1399994799334887495';   // Full-Fledged Angel
+const ROLE_SIXTH = '1399999195309408320';   // silenced by heaven
 
 // Roles subject to restrictions (first 4; fifth has highest privileges)
 const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
 
-// Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
+// ---------- Exempt channels (Blessed Cutie / Angel in Training lists) ----------
 const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
   ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
-  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+  : [
+      '1397034600341045298',
+      '1397034371705344173',
+      '1397389624153866433',
+      '1397034293666250773',
+      '1397034692892426370',
+      '1397442358840397914',
+      '1404176934946214119',
+    ];
+
 const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
   ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
-  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
+  : [
+      '1397034600341045298',
+      '1397034371705344173',
+      '1397389624153866433',
+      '1397034293666250773',
+      '1397034692892426370',
+      '1397442358840397914',
+      '1404176934946214119',
+    ];
 
-// Allowed video domains (includes tenor.com now)
-const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be', 'tenor.com'];
-
-// Recognized video extensions (detect device-uploaded videos)
+// ---------- Allowed domains / file-extension helpers ----------
+const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be', 'tenor.com']; // (kept for completeness)
 const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
 
-// Level-up messages (full messages)
+// ---------- Level-up messages ----------
 const ROLE_MESSAGES = {
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -125,34 +151,51 @@ Until then…<a:pinkwingl:1398052283769684102> <:Angry_Angel:1397425835551752253
 #RepentAndWatch<:RetroGameOverLaptop:1397449586142089236> 
 #MutedByTheDivine<a:MuteButton:1397425770980315176> 
 #AngelSeesAll<a:angelheart:1397407694930968698><a:kawaii_winged_hearts:1397407675674919022> 
-#YouShouldBeGrateful<:sad_angel:1397425823077892201>`
+#YouShouldBeGrateful<:sad_angel:1397425823077892201>`,
 };
 
-// Create Discord client
+// ---------- Create Discord client ----------
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Message, Partials.Channel]
+  partials: [Partials.Message, Partials.Channel],
 });
 
-// Ready event
+// ---------- Extra process-level debug ----------
+process.on('unhandledRejection', (reason) => {
+  console.error('🧨 UnhandledRejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('💥 UncaughtException:', err);
+});
+
+// ---------- Ready event ----------
+let readyFired = false;
 client.once(Events.ClientReady, () => {
+  readyFired = true;
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
 });
 
-// Debounce map for level-up messages (2 seconds)
+// Watchdog in case login stalls
+setTimeout(() => {
+  if (!readyFired) {
+    console.warn('⏳ Bot not ready after 30s. Check token, intents, privileged access, or gateway reachability.');
+  }
+}, 30000);
+
+// ---------- Debounce for role messages ----------
 const recentRoleMessages = new Map();
 const DEBOUNCE_MS = 2000;
 
-// Role change handler with 2s debounce, sends via webhook (fallback to channel)
+// ---------- Role change handler (debounced, webhook first, fallback to channel) ----------
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
-    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    const added = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
     if (!added.size) return;
 
     for (const role of added.values()) {
@@ -163,7 +206,8 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         if (recentRoleMessages.has(key)) {
           const lastSent = recentRoleMessages.get(key);
           if (now - lastSent < DEBOUNCE_MS) {
-            continue; // skip duplicate message
+            if (DEBUG_LOGS) console.log(`🟨 Debounced role message for ${newMember.user.tag} role=${role.id}`);
+            continue;
           }
         }
 
@@ -172,16 +216,19 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
         const mention = `<@${newMember.id}>`;
         const text = ROLE_MESSAGES[role.id](mention);
 
+        if (DEBUG_LOGS) console.log(`📣 Sending role-up message for ${newMember.user.tag} role=${role.id}`);
+
         if (levelUpWebhook) {
-          await levelUpWebhook.send({
-            content: text,
-            allowedMentions: { parse: ['users'] }
-          }).catch(async (err) => {
-            console.warn('Could not send level-up webhook message:', err?.message ?? err);
-            // fallback to channel send
-            const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-            if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
-          });
+          await levelUpWebhook
+            .send({
+              content: text,
+              allowedMentions: { parse: ['users'] },
+            })
+            .catch(async (err) => {
+              console.warn('Could not send level-up webhook message:', err?.message ?? err);
+              const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+              if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
+            });
         } else {
           const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
           if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
@@ -193,13 +240,81 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   }
 });
 
-// Message handler — enforce restrictions (forward blocking restored; device-video blocking for first 4 roles)
+// ---------- Message moderation helper regex ----------
+const DISCORD_MESSAGE_LINK = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
+const CDN_ATTACHMENT_LINK = /https?:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/\S+/i;
+
+const GENERAL_LINK = /(https?:\/\/[^\s]+)/i;
+const YOUTUBE_LINK = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/\S+/i;
+const TENOR_LINK = /(https?:\/\/)?(www\.)?tenor\.com\/\S+/i;
+
+function isForwardedMessage(msg) {
+  const content = (msg.content || '').trim();
+  const hasMsgLink = DISCORD_MESSAGE_LINK.test(content);
+  const hasCdnLink = CDN_ATTACHMENT_LINK.test(content);
+  const stripped = content.replace(DISCORD_MESSAGE_LINK, '').replace(CDN_ATTACHMENT_LINK, '').trim();
+  const isOnlyLink = (hasMsgLink || hasCdnLink) && stripped.length === 0;
+
+  // Detect Discord links inside embeds
+  const embedsContainDiscord = msg.embeds?.some((e) => {
+    const fields = [
+      e.url,
+      e.description,
+      e.title,
+      e.footer?.text,
+      e.author?.url,
+      e.author?.name,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return DISCORD_MESSAGE_LINK.test(fields) || CDN_ATTACHMENT_LINK.test(fields);
+  });
+
+  // Allow normal replies that include additional text
+  const isReply = !!msg.reference;
+  const hasExtraTextInReply = isReply && content.length > 0 && !isOnlyLink;
+
+  if (hasExtraTextInReply) return false;
+  return isOnlyLink || embedsContainDiscord;
+}
+
+function hasAnimatedAttachment(msg) {
+  for (const attachment of msg.attachments.values()) {
+    const name = (attachment.name || '').toLowerCase();
+    const ct = (attachment.contentType || '').toLowerCase();
+    if (
+      name.endsWith('.gif') ||
+      name.endsWith('.webp') ||
+      name.endsWith('.apng') ||
+      ct.startsWith('image/gif') ||
+      ct.includes('webp') ||
+      ct.includes('apng')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasDeviceVideoAttachment(msg) {
+  for (const att of msg.attachments.values()) {
+    const name = (att.name || '').toLowerCase();
+    const ct = (att.contentType || '').toLowerCase();
+    if (VIDEO_EXTENSIONS_REGEX.test(name) || ct.startsWith('video/')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------- Message handler (all original rules preserved) ----------
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
 
-    // Fetch member in case partial
-    const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
+    // Ensure we have the member object
+    const member =
+      message.member || (await message.guild.members.fetch(message.author.id).catch(() => null));
     if (!member) return;
 
     const hasFirst = member.roles.cache.has(ROLE_FIRST);
@@ -207,96 +322,143 @@ client.on(Events.MessageCreate, async (message) => {
     const hasThird = member.roles.cache.has(ROLE_THIRD);
     const hasFourth = member.roles.cache.has(ROLE_FOURTH);
     const hasFifth = member.roles.cache.has(ROLE_FIFTH);
-    const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
-    if (!isRestricted) return; // not one of the roles we manage
+    const isRestricted = RESTRICTED_ROLE_IDS.some((id) => member.roles.cache.has(id));
 
-    // === START: strict forwarding/embed/animated-attachment block ===
+    if (DEBUG_LOGS) {
+      console.log(
+        `📩 ${member.user.tag} (${message.id}) #${message.channel.id} | roles: ` +
+          `1:${hasFirst} 2:${hasSecond} 3:${hasThird} 4:${hasFourth} 5:${hasFifth} | content: "${message.content || '[no text]'}"`
+      );
+    }
 
-    // Regex for discord message link anywhere in content
-    const discordMessageLinkRegex = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
-
-    // Is message a reply?
-    const isReply = !!message.reference;
-
-    // Does message content contain a discord message link?
-    const containsDiscordMessageLink = discordMessageLinkRegex.test(message.content || '');
-
-    // Is message empty (no content, no attachments, no embeds)?
-    const isEmptyMessage = (!message.content || message.content.trim() === '') &&
+    // ---- Strict forwarded/embed-only/empty blocking for restricted roles (kept) ----
+    const isEmpty =
+      (!message.content || message.content.trim() === '') &&
       message.attachments.size === 0 &&
       message.embeds.length === 0;
 
-    // Is message embed-only (no content, embeds only, no attachments)?
-    const isEmbedOnly = (!message.content || message.content.trim() === '') &&
+    const isEmbedOnly =
+      (!message.content || message.content.trim() === '') &&
       message.attachments.size === 0 &&
       message.embeds.length > 0;
 
-    if ((isReply && containsDiscordMessageLink) || containsDiscordMessageLink || isEmptyMessage || isEmbedOnly) {
-      await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
-      return;
-    }
-
-    // Animated attachments block (gif, webp, apng)
-    // Delete animated images from first 4 restricted roles
-    if (message.attachments.size > 0) {
-      for (const attachment of message.attachments.values()) {
-        if (/\.(gif|webp|apng)$/i.test(attachment.name)) {
-          if (isRestricted) {
-            await message.delete().catch(() => {});
-            return;
-          }
-        }
+    if (isRestricted) {
+      if (isForwardedMessage(message)) {
+        if (DEBUG_LOGS) console.log('🚫 Delete: forwarded message detected');
+        await message.delete().catch((err) =>
+          console.warn('Could not delete forwarded message:', err?.message ?? err)
+        );
+        return;
+      }
+      if (isEmpty || isEmbedOnly) {
+        if (DEBUG_LOGS) console.log('🚫 Delete: empty or embed-only message');
+        await message.delete().catch((err) =>
+          console.warn('Could not delete empty/embed-only message:', err?.message ?? err)
+        );
+        return;
       }
     }
 
-    // === Additional rules for second and third roles exempt channels can be added here if needed ===
+    // Pre-calc link booleans
+    const content = message.content || '';
+    const hasAnyLink = GENERAL_LINK.test(content);
+    const isYoutubeLink = YOUTUBE_LINK.test(content);
+    const isTenorLink = TENOR_LINK.test(content);
 
-    // Other logic (e.g. Tenor gif allowance, YouTube link allowance) can be implemented similarly here...
+    const animated = hasAnimatedAttachment(message);
+    const deviceVideo = hasDeviceVideoAttachment(message);
+    const animatedOrVideo = animated || deviceVideo;
+
+    // ---- Per-role rules (original behavior) ----
+
+    // 1) First-Time Believer: NO images, NO links anywhere
+    if (hasFirst) {
+      if (message.attachments.size > 0 || hasAnyLink) {
+        if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_FIRST): attachments or any link');
+        await message.delete().catch(() => {});
+        return;
+      }
+    }
+
+    // 2) Blessed Cutie: pics + YouTube links only in exempt channels
+    if (hasSecond && !hasThird) {
+      const inExempt = EXEMPT_CHANNELS_SECOND.includes(message.channel.id);
+
+      if (!inExempt) {
+        if (message.attachments.size > 0 || hasAnyLink) {
+          if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_SECOND non-exempt): attachments or any link');
+          await message.delete().catch(() => {});
+          return;
+        }
+      } else {
+        // Inside exempt: allow pictures + YouTube links only (no animated gifs/videos)
+        if (animatedOrVideo) {
+          if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_SECOND exempt): animated or device video');
+          await message.delete().catch(() => {});
+          return;
+        }
+        if (hasAnyLink && !isYoutubeLink) {
+          if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_SECOND exempt): non-YouTube link');
+          await message.delete().catch(() => {});
+          return;
+        }
+      }
+      return;
+    }
+
+    // 3) Angel in Training: pics + YouTube + Tenor GIF links anywhere (no animated/device-uploaded attachments)
+    if (hasThird && !hasFourth) {
+      if (animatedOrVideo) {
+        if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_THIRD): animated or device video attachment');
+        await message.delete().catch(() => {});
+        return;
+      }
+      if (hasAnyLink && !isYoutubeLink && !isTenorLink) {
+        if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_THIRD): non-YouTube/Tenor link');
+        await message.delete().catch(() => {});
+        return;
+      }
+      return;
+    }
+
+    // 4) Angel with Wings: pics + YouTube + Tenor + other links anywhere, no device video uploads (also block animated images as before)
+    if (hasFourth && !hasFifth) {
+      if (animatedOrVideo) {
+        if (DEBUG_LOGS) console.log('🚫 Delete (ROLE_FOURTH): animated or device video attachment');
+        await message.delete().catch(() => {});
+        return;
+      }
+      // all links allowed
+      return;
+    }
+
+    // 5) Full-Fledged Angel: no restrictions
+    if (hasFifth) {
+      if (DEBUG_LOGS) console.log('✅ (ROLE_FIFTH): no restrictions applied');
+      return;
+    }
+
+    // ROLE_SIXTH has no additional message restrictions here (kept as-is)
 
   } catch (err) {
     console.error('MessageCreate handler error:', err);
   }
 });
 
-// Express keep-alive server (for Render or other platforms)
+// ---------- Express keep-alive server ----------
 const app = express();
-app.get('/', (req, res) => res.send('Bot is alive!'));
-app.listen(PORT, () => console.log(`✅ Express server listening on port ${PORT}`));
-
-// ----------------------
-// Debugged login section
-// ----------------------
-console.log("✅ Starting bot...");
-
-// Show token length so you can verify token is being passed (value itself is not printed)
-if (!TOKEN) {
-  console.error("❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?");
-} else {
-  console.log("✅ DISCORD_TOKEN found, length:", TOKEN.length);
-  console.log("Attempting login...");
-}
-
-// Helpful client-level logging for troubleshooting
-client.on('error', (err) => {
-  console.error('Client error:', err);
+app.get('/', (req, res) => {
+  res.send('Angel bot alive!');
 });
-client.on('warn', (info) => {
-  console.warn('Client warning:', info);
-});
-client.on('shardError', (err) => {
-  console.error('Shard error:', err);
-});
-client.on('disconnect', (event) => {
-  console.warn('Client disconnected:', event);
+app.listen(PORT, () => {
+  console.log(`🌐 Express server started on port ${PORT}`);
 });
 
-// Attempt login and surface any rejection errors
-client.login(TOKEN)
-  .then(() => {
-    console.log('✅ Login request sent (awaiting ready event).');
-  })
-  .catch((err) => {
-    console.error('❌ Login failed (rejected promise):', err);
-    if (err && err.code) console.error('Error code:', err.code);
-    if (err && err.message) console.error('Error message:', err.message);
-  });
+// ---------- Login the client ----------
+console.log('✅ Starting bot...');
+console.log(`✅ DISCORD_TOKEN found, length: ${TOKEN.length}`);
+console.log('Attempting login...');
+client.login(TOKEN).catch((err) => {
+  console.error('Discord login failed:', err);
+  process.exit(1);
+});
