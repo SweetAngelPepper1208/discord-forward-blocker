@@ -1,86 +1,44 @@
-// bot.js
-import { Client, GatewayIntentBits, Events, Partials, WebhookClient } from 'discord.js';
-import express from 'express';
-import dotenv from 'dotenv';
+// bot.js - role-detect only, sends full messages to a specific channel
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import express from 'express';
+import { Client, GatewayIntentBits, Events, Options } from 'discord.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Load .env from Render secret file if exists, else fallback to local .env
-const secretEnvPath = '/run/secrets/.env';
-if (fs.existsSync(secretEnvPath)) {
-  dotenv.config({ path: secretEnvPath });
-  console.log('✅ Loaded .env from Render secret file');
-} else {
-  dotenv.config({ path: path.join(__dirname, '.env') });
-  console.log('✅ Loaded local .env file');
+// ---------- secrets loader (Render / local / env) ----------
+function readSecret(name) {
+  const renderPath = path.join('/etc/secrets', name);
+  const localPath = path.join('./secrets', name);
+  if (fs.existsSync(renderPath)) return fs.readFileSync(renderPath, 'utf8').trim();
+  if (fs.existsSync(localPath)) return fs.readFileSync(localPath, 'utf8').trim();
+  return process.env[name];
 }
 
-console.log("DISCORD_TOKEN:", process.env.DISCORD_TOKEN ? "[REDACTED]" : "NOT FOUND");
+const DISCORD_TOKEN = readSecret('DISCORD_TOKEN');
+const PORT = process.env.PORT || Number(readSecret('PORT')) || 3000;
+const DEBUG = (readSecret('DEBUG_MESSAGES') || process.env.DEBUG_MESSAGES || 'false').toLowerCase() === 'true';
 
-// Config
-const TOKEN = process.env.DISCORD_TOKEN;
-const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+// Use the channel ID you supplied, but allow override via secret/env if desired
+const DEFAULT_LEVEL_UP_CHANNEL = '1397916231545389096';
+const LEVEL_UP_CHANNEL = readSecret('LEVEL_UP_CHANNEL') || DEFAULT_LEVEL_UP_CHANNEL;
 
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/123456789/abcdefghijklmnopqrstuvwxyz';
+console.log('--- startup ---');
+console.log('DISCORD_TOKEN present:', !!DISCORD_TOKEN);
+console.log('LEVEL_UP_CHANNEL:', LEVEL_UP_CHANNEL);
+console.log('PORT:', PORT);
+console.log('DEBUG:', DEBUG);
 
-if (!TOKEN) {
-  console.error("❌ Missing DISCORD_TOKEN in environment — stopping.");
-  process.exit(1);
-}
-
-// Create WebhookClient (try url constructor first, fallback to parsing id/token)
-let levelUpWebhook = null;
-try {
-  levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
-  console.log('✅ WebhookClient created (url).');
-} catch (e) {
-  try {
-    const match = (LEVEL_UP_WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
-    if (match) {
-      const [, id, token] = match;
-      levelUpWebhook = new WebhookClient({ id, token });
-      console.log('✅ WebhookClient created (id/token).');
-    } else {
-      throw new Error('Invalid webhook format');
-    }
-  } catch (err) {
-    console.warn('⚠️ WebhookClient not created:', err?.message ?? err);
-    levelUpWebhook = null;
-  }
-}
-
-// Role IDs
-const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
-const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie (pictures + youtube in exempt channels)
-const ROLE_THIRD = '1399993506759573616'; // Angel in Training
+// ---------- role IDs ----------
+const ROLE_FIRST  = '1399135278396080238'; // First-Time Believer
+const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie
+const ROLE_THIRD  = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
-const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
-const ROLE_SIXTH = '1399999195309408320'; // silenced by heaven
+const ROLE_FIFTH  = '1399994799334887495'; // Full-Fledged Angel
+const ROLE_SIXTH  = '1399999195309408320'; // silenced by heaven
 
-// Roles subject to restrictions (first 4; fifth has highest privileges)
-const RESTRICTED_ROLE_IDS = [ROLE_FIRST, ROLE_SECOND, ROLE_THIRD, ROLE_FOURTH];
-
-// Example exempt channels — replace with your real channel IDs or set EXEMPT_CHANNELS_SECOND/THIRD env vars
-const EXEMPT_CHANNELS_SECOND = process.env.EXEMPT_CHANNELS_SECOND
-  ? process.env.EXEMPT_CHANNELS_SECOND.split(',')
-  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
-const EXEMPT_CHANNELS_THIRD = process.env.EXEMPT_CHANNELS_THIRD
-  ? process.env.EXEMPT_CHANNELS_THIRD.split(',')
-  : ['1397034600341045298', '1397034371705344173', '1397389624153866433', '1397034293666250773', '1397034692892426370', '1397442358840397914', '1404176934946214119'];
-
-// Allowed video domains (includes tenor.com now)
-const ALLOWED_VIDEO_DOMAINS = ['youtube.com', 'youtu.be', 'tenor.com'];
-
-// Recognized video extensions (detect device-uploaded videos)
-const VIDEO_EXTENSIONS_REGEX = /\.(mp4|mov|mkv|webm|avi|flv|mpeg|mpg|m4v|3gp)$/i;
-
-// Level-up messages (full messages)
+// ---------- full messages (exact content you provided) ----------
 const ROLE_MESSAGES = {
+  [ROLE_FIRST]: (mention) => `Welcome ${mention} to the server! 🌸 You’ve just become a **First-Time Believer**! Take your first steps into heaven! ✨`,
+
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
 You're not flying with the angels yet... but you're definitely glowing with that celestial aesthetic <a:KawaiiBunny_Recolored:1399156026187710560> <a:Flowers:1398259380217970810> 
@@ -125,178 +83,88 @@ Until then…<a:pinkwingl:1398052283769684102> <:Angry_Angel:1397425835551752253
 #RepentAndWatch<:RetroGameOverLaptop:1397449586142089236> 
 #MutedByTheDivine<a:MuteButton:1397425770980315176> 
 #AngelSeesAll<a:angelheart:1397407694930968698><a:kawaii_winged_hearts:1397407675674919022> 
-#YouShouldBeGrateful<:sad_angel:1397425823077892201>`
+#YouShouldBeGrateful<:sad_angel:1397425823077892201>`,
 };
 
-// Create Discord client
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ],
-  partials: [Partials.Message, Partials.Channel]
-});
+// ---------- debounce map ----------
+const roleCooldown = new Map();
+const DEBOUNCE_TIME = 5000; // 5 seconds
 
-// Ready event
-client.once(Events.ClientReady, () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
-});
-
-// Debounce map for level-up messages (2 seconds)
-const recentRoleMessages = new Map();
-const DEBOUNCE_MS = 2000;
-
-// Role change handler with 2s debounce, sends via webhook (fallback to channel)
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  try {
-    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-    if (!added.size) return;
-
-    for (const role of added.values()) {
-      if (ROLE_MESSAGES[role.id]) {
-        const key = `${newMember.id}-${role.id}`;
-        const now = Date.now();
-
-        if (recentRoleMessages.has(key)) {
-          const lastSent = recentRoleMessages.get(key);
-          if (now - lastSent < DEBOUNCE_MS) {
-            continue; // skip duplicate message
-          }
-        }
-
-        recentRoleMessages.set(key, now);
-
-        const mention = `<@${newMember.id}>`;
-        const text = ROLE_MESSAGES[role.id](mention);
-
-        if (levelUpWebhook) {
-          await levelUpWebhook.send({
-            content: text,
-            allowedMentions: { parse: ['users'] }
-          }).catch(async (err) => {
-            console.warn('Could not send level-up webhook message:', err?.message ?? err);
-            // fallback to channel send
-            const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-            if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
-          });
-        } else {
-          const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-          if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
-        }
-      }
-    }
-  } catch (err) {
-    console.error('GuildMemberUpdate handler error:', err);
-  }
-});
-
-// Message handler — enforce restrictions (forward blocking restored; device-video blocking for first 4 roles)
-client.on(Events.MessageCreate, async (message) => {
-  try {
-    if (message.author.bot || !message.guild) return;
-
-    // Fetch member in case partial
-    const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
-    if (!member) return;
-
-    const hasFirst = member.roles.cache.has(ROLE_FIRST);
-    const hasSecond = member.roles.cache.has(ROLE_SECOND);
-    const hasThird = member.roles.cache.has(ROLE_THIRD);
-    const hasFourth = member.roles.cache.has(ROLE_FOURTH);
-    const hasFifth = member.roles.cache.has(ROLE_FIFTH);
-    const isRestricted = RESTRICTED_ROLE_IDS.some(id => member.roles.cache.has(id));
-    if (!isRestricted) return; // not one of the roles we manage
-
-    // === START: strict forwarding/embed/animated-attachment block ===
-
-    // Regex for discord message link anywhere in content
-    const discordMessageLinkRegex = /https?:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/i;
-
-    // Is message a reply?
-    const isReply = !!message.reference;
-
-    // Does message content contain a discord message link?
-    const containsDiscordMessageLink = discordMessageLinkRegex.test(message.content || '');
-
-    // Is message empty (no content, no attachments, no embeds)?
-    const isEmptyMessage = (!message.content || message.content.trim() === '') &&
-      message.attachments.size === 0 &&
-      message.embeds.length === 0;
-
-    // Is message embed-only (no content, embeds only, no attachments)?
-    const isEmbedOnly = (!message.content || message.content.trim() === '') &&
-      message.attachments.size === 0 &&
-      message.embeds.length > 0;
-
-    if ((isReply && containsDiscordMessageLink) || containsDiscordMessageLink || isEmptyMessage || isEmbedOnly) {
-      await message.delete().catch(err => console.warn('Could not delete forwarded or restricted message:', err.message));
-      return;
-    }
-
-    // Animated attachments block (gif, webp, apng)
-    // Delete animated images from first 4 restricted roles
-    if (message.attachments.size > 0) {
-      for (const attachment of message.attachments.values()) {
-        if (/\.(gif|webp|apng)$/i.test(attachment.name)) {
-          if (isRestricted) {
-            await message.delete().catch(() => {});
-            return;
-          }
-        }
-      }
-    }
-
-    // === Additional rules for second and third roles exempt channels can be added here if needed ===
-
-    // Other logic (e.g. Tenor gif allowance, YouTube link allowance) can be implemented similarly here...
-
-  } catch (err) {
-    console.error('MessageCreate handler error:', err);
-  }
-});
-
-// Express keep-alive server (for Render or other platforms)
-const app = express();
-app.get('/', (req, res) => res.send('Bot is alive!'));
-app.listen(PORT, () => console.log(`✅ Express server listening on port ${PORT}`));
-
-// ----------------------
-// Debugged login section
-// ----------------------
-console.log("✅ Starting bot...");
-
-// Show token length so you can verify token is being passed (value itself is not printed)
-if (!TOKEN) {
-  console.error("❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?");
-} else {
-  console.log("✅ DISCORD_TOKEN found, length:", TOKEN.length);
-  console.log("Attempting login...");
+// ---------- create client ----------
+if (!DISCORD_TOKEN) {
+  console.error('❌ DISCORD_TOKEN missing. Set it in env/secrets and redeploy.');
+  process.exit(1);
 }
 
-// Helpful client-level logging for troubleshooting
-client.on('error', (err) => {
-  console.error('Client error:', err);
-});
-client.on('warn', (info) => {
-  console.warn('Client warning:', info);
-});
-client.on('shardError', (err) => {
-  console.error('Shard error:', err);
-});
-client.on('disconnect', (event) => {
-  console.warn('Client disconnected:', event);
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  makeCache: Options.cacheWithLimits({
+    MessageManager: 0,
+    ReactionManager: 0,
+    ThreadMemberManager: 0,
+    GuildMemberManager: 200,
+  }),
 });
 
-// Attempt login and surface any rejection errors
-client.login(TOKEN)
-  .then(() => {
-    console.log('✅ Login request sent (awaiting ready event).');
-  })
-  .catch((err) => {
-    console.error('❌ Login failed (rejected promise):', err);
-    if (err && err.code) console.error('Error code:', err.code);
-    if (err && err.message) console.error('Error message:', err.message);
-  });
+// ---------- helper: send to configured channel ----------
+async function sendToLevelChannel(guild, text) {
+  try {
+    const ch = await guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+    if (!ch) {
+      console.warn('⚠️ Level channel not found:', LEVEL_UP_CHANNEL);
+      return;
+    }
+    // ensure text-based
+    if (typeof ch.isTextBased === 'function' ? ch.isTextBased() : ch.isText) {
+      await ch.send({ content: text, allowedMentions: { parse: ['users'] } });
+      DEBUG && console.log('📤 Sent level-up to channel', LEVEL_UP_CHANNEL);
+    } else {
+      console.warn('⚠️ Level channel is not text-based:', LEVEL_UP_CHANNEL);
+    }
+  } catch (err) {
+    console.error('❌ Error sending to level channel:', err);
+  }
+}
+
+// ---------- role update handler ----------
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  try {
+    const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
+    if (!addedRoles.size) return;
+
+    for (const role of addedRoles.values()) {
+      if (!ROLE_MESSAGES[role.id]) continue;
+
+      const key = `${newMember.id}-${role.id}`;
+      const now = Date.now();
+      const until = roleCooldown.get(key) || 0;
+      if (now < until) {
+        DEBUG && console.log('➖ Debounced', key);
+        continue;
+      }
+      roleCooldown.set(key, now + DEBOUNCE_TIME);
+
+      const mention = `<@${newMember.id}>`;
+      const text = ROLE_MESSAGES[role.id](mention);
+
+      // send to the configured channel
+      await sendToLevelChannel(newMember.guild, text);
+    }
+  } catch (err) {
+    console.error('❌ Error in GuildMemberUpdate handler:', err);
+  }
+});
+
+// ---------- login & keepalive ----------
+const app = express();
+app.get('/', (_, res) => res.send('Bot is alive.'));
+app.listen(PORT, () => console.log(`🌐 Express listening on ${PORT}`));
+
+client.once(Events.ClientReady, c => {
+  console.log(`✅ Logged in as ${c.user.tag}`);
+});
+
+console.log('🌐 Attempting login...');
+client.login(DISCORD_TOKEN).catch(err => {
+  console.error('❌ Login failed:', err);
+});
