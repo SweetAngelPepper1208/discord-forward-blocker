@@ -22,7 +22,7 @@ if (fs.existsSync(secretEnvPath)) {
 // Config
 const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || '';
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 // Debounce time (ms)
