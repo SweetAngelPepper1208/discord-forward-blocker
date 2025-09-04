@@ -3,7 +3,7 @@ import {
   Client,
   GatewayIntentBits,
   Events,
-  Partials,
+  WebhookClient,
   Options,
 } from 'discord.js';
 import express from 'express';
@@ -32,21 +32,22 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const DEBUG_MESSAGES = (process.env.DEBUG_MESSAGES || 'false').toLowerCase() === 'true';
+const DEBOUNCE_MS = Number(process.env.DEBOUNCE_MS) || 5000; // default 5s
 
 if (!TOKEN) {
   console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
   process.exit(1);
 }
 
-// ---------- Role IDs ----------
-const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
+// ---------- Role IDs (all 6) ----------
+const ROLE_FIRST  = '1399135278396080238'; // First-Time Believer (text only)
 const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie
-const ROLE_THIRD = '1399993506759573616'; // Angel in Training
+const ROLE_THIRD  = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
-const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
-const ROLE_SIXTH = '1399999195309408320'; // silenced by heaven
+const ROLE_FIFTH  = '1399994799334887495'; // Full-Fledged Angel
+const ROLE_SIXTH  = '1399999195309408320'; // silenced by heaven
 
-// ---------- Full level-up messages (unchanged from your input) ----------
+// ---------- Full level-up messages (exact as you provided) ----------
 const ROLE_MESSAGES = {
   [ROLE_FIRST]: (mention) =>
     `Welcome ${mention} to the server! 🌸 You’ve just become a **First-Time Believer**! Take your first steps into heaven! ✨`,
@@ -83,7 +84,7 @@ You’ve earned your place at the pinnacle. Own it, rule it, and show them what 
 #CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 #RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`,
 
-  [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:139781623...>☁️ ***
+  [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:1397818023838220298>☁️ ***
 ${mention} you have sinned. You have been silenced.
 Heaven has no place for noisy little sinners like you right now.<a:Chika_whack_whack_whack_FB:1399306320745857045> <a:a_anger:1399306470192840805> 
 Be grateful you're only muted and not cast out entirely, okay~? <:a_cute_love_snuggle:1400040183063122041> <:heartsies:1399307354335612968> 
@@ -100,15 +101,37 @@ Until then…<a:pinkwingl:1398052283769684102> <:Angry_Angel:1397425835551752253
 
 // ---------- Debounce map ----------
 const recentRoleMessages = new Map();
-const DEBOUNCE_MS = 2000;
+const DEBOUNCE_MS = DEBOUNCE_MS || 5000; // fallback constant (not to be confused with env var above)
+
+// ---------- Webhook setup (if WEBHOOK_URL provided in env/secrets) ----------
+let levelUpWebhook = null;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.LEVEL_UP_WEBHOOK_URL || null;
+if (WEBHOOK_URL) {
+  try {
+    levelUpWebhook = new WebhookClient({ url: WEBHOOK_URL });
+    console.log('✅ WebhookClient created (url).');
+  } catch (e) {
+    try {
+      const match = (WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
+      if (match) {
+        const [, id, token] = match;
+        levelUpWebhook = new WebhookClient({ id, token });
+        console.log('✅ WebhookClient created (id/token).');
+      } else {
+        throw new Error('Invalid webhook format');
+      }
+    } catch (err) {
+      console.warn('⚠️ WebhookClient not created:', err?.message ?? err);
+      levelUpWebhook = null;
+    }
+  }
+} else {
+  console.log('ℹ️ No WEBHOOK_URL provided; will post as bot user to LEVEL_UP_CHANNEL.');
+}
 
 // ---------- Create lightweight Discord client ----------
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
-  ],
-  partials: [Partials.Message, Partials.Channel],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   makeCache: Options.cacheWithLimits({
     MessageManager: 0,
     ReactionManager: 0,
@@ -117,53 +140,73 @@ const client = new Client({
   }),
 });
 
-// ---------- Role change handler (debounced) ----------
+// ---------- Helper: send level-up (webhook preferred; fallback to channel send) ----------
+async function sendLevelUp(guild, text) {
+  try {
+    if (levelUpWebhook) {
+      await levelUpWebhook.send({ content: text, allowedMentions: { parse: ['users'] } });
+      DEBUG_MESSAGES && console.log('📤 Sent via webhook.');
+      return;
+    }
+
+    const ch = await guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+    if (!ch) {
+      console.warn('⚠️ LEVEL_UP_CHANNEL not found:', LEVEL_UP_CHANNEL);
+      return;
+    }
+    if (typeof ch.isTextBased === 'function' ? ch.isTextBased() : ch.isText) {
+      await ch.send({ content: text, allowedMentions: { parse: ['users'] } }).catch((e) => {
+        console.warn('❌ Fallback channel send failed:', e?.message ?? e);
+      });
+      DEBUG_MESSAGES && console.log('📤 Sent via channel fallback.');
+    } else {
+      console.warn('⚠️ LEVEL_UP_CHANNEL is not text-based:', LEVEL_UP_CHANNEL);
+    }
+  } catch (err) {
+    console.error('❌ sendLevelUp error:', err);
+  }
+}
+
+// ---------- Role change handler (debounced per user+role) ----------
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
     const added = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
     if (!added.size) return;
 
     for (const role of added.values()) {
-      if (ROLE_MESSAGES[role.id]) {
-        const key = `${newMember.id}-${role.id}`;
-        const now = Date.now();
+      if (!ROLE_MESSAGES[role.id]) continue;
 
-        if (recentRoleMessages.has(key)) {
-          const lastSent = recentRoleMessages.get(key);
-          if (now - lastSent < DEBOUNCE_MS) {
-            if (DEBUG_MESSAGES) console.log(`🟨 Debounced role message for ${newMember.user.tag} role=${role.id}`);
-            continue;
-          }
-        }
-
-        recentRoleMessages.set(key, now);
-
-        const mention = `<@${newMember.id}>`;
-        const text = ROLE_MESSAGES[role.id](mention);
-
-        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-        if (ch?.isTextBased()) await ch.send({ content: text, allowedMentions: { parse: ['users'] } }).catch(() => {});
-
+      const key = `${newMember.id}-${role.id}`;
+      const now = Date.now();
+      const lastSent = recentRoleMessages.get(key) || 0;
+      if (now - lastSent < DEBOUNCE_MS) {
+        DEBUG_MESSAGES && console.log(`🟨 Debounced role message for ${newMember.user.tag} role=${role.id}`);
+        continue;
       }
+      recentRoleMessages.set(key, now);
+
+      const mention = `<@${newMember.id}>`;
+      const text = ROLE_MESSAGES[role.id](mention);
+      await sendLevelUp(newMember.guild, text);
     }
   } catch (err) {
     console.error('GuildMemberUpdate handler error:', err);
   }
 });
 
-// ---------- Express keep-alive ----------
+// ---------- Express keep-alive server ----------
 const app = express();
 app.get('/', (req, res) => res.send('Bot is alive!'));
 app.listen(PORT, () => console.log(`✅ Express server listening on port ${PORT}`));
 
 // ---------- Debugged login section ----------
-console.log("✅ Starting bot...");
+console.log('✅ Starting bot...');
 
 if (!TOKEN) {
-  console.error("❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?");
+  console.error('❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?');
 } else {
-  console.log("✅ DISCORD_TOKEN found, length:", TOKEN.length);
-  console.log("Attempting login...");
+  console.log('✅ DISCORD_TOKEN found, length:', TOKEN.length);
+  console.log('Attempting login...');
 }
 
 client.on('error', (err) => {
