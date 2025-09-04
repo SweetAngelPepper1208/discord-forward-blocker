@@ -1,21 +1,15 @@
 // bot.js
-import {
-  Client,
-  GatewayIntentBits,
-  Events,
-  WebhookClient,
-  Options,
-} from 'discord.js';
-import express from 'express';
+import { Client, GatewayIntentBits, Events, WebhookClient } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import express from 'express';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ---------- Load .env from Render secret file if exists, else fallback to local .env ----------
+// Load .env from Render secret file if exists, else fallback to local .env
 const secretEnvPath = '/run/secrets/.env';
 if (fs.existsSync(secretEnvPath)) {
   dotenv.config({ path: secretEnvPath });
@@ -25,32 +19,37 @@ if (fs.existsSync(secretEnvPath)) {
   console.log('✅ Loaded local .env file');
 }
 
-console.log('DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '[REDACTED]' : 'NOT FOUND');
-
-// ---------- Config ----------
+// Config
 const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || '';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-const DEBUG_MESSAGES = (process.env.DEBUG_MESSAGES || 'false').toLowerCase() === 'true';
-const DEBOUNCE_MS = Number(process.env.DEBOUNCE_MS) || 5000; // default 5s
 
-if (!TOKEN) {
-  console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
-  process.exit(1);
+// Debounce time (ms)
+const DEBOUNCE_MS = process.env.DEBOUNCE_MS ? parseInt(process.env.DEBOUNCE_MS, 10) : 5000;
+
+// Webhook client
+let levelUpWebhook = null;
+if (LEVEL_UP_WEBHOOK_URL) {
+  try {
+    levelUpWebhook = new WebhookClient({ url: LEVEL_UP_WEBHOOK_URL });
+    console.log('✅ WebhookClient created');
+  } catch (err) {
+    console.warn('⚠️ WebhookClient not created:', err.message ?? err);
+  }
 }
 
-// ---------- Role IDs (all 6) ----------
-const ROLE_FIRST  = '1399135278396080238'; // First-Time Believer (text only)
-const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie
-const ROLE_THIRD  = '1399993506759573616'; // Angel in Training
-const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
-const ROLE_FIFTH  = '1399994799334887495'; // Full-Fledged Angel
-const ROLE_SIXTH  = '1399999195309408320'; // silenced by heaven
+// Role IDs
+const ROLE_FIRST = '1399135278396080238';
+const ROLE_SECOND = '1399992492568350794';
+const ROLE_THIRD = '1399993506759573616';
+const ROLE_FOURTH = '1399994681970004021';
+const ROLE_FIFTH = '1399994799334887495';
+const ROLE_SIXTH = '1399999195309408320';
 
-// ---------- Full level-up messages (exact as you provided) ----------
+// Level-up messages — full versions
 const ROLE_MESSAGES = {
-  [ROLE_FIRST]: (mention) =>
-    `Welcome ${mention} to the server! 🌸 You’ve just become a **First-Time Believer**! Take your first steps into heaven! ✨`,
+  [ROLE_FIRST]: (mention) => `Welcome ${mention}, First-Time Believer! Keep spreading the light 🌟`,
 
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -69,20 +68,14 @@ Don’t rush the glow-up, you’re doing great, Just keep shining!<:3454pinkpixe
 #DivineInProgress<a:pixel_wifi:1397426129391849522>`,
 
   [ROLE_FOURTH]: (mention) => `***OMG!!! OMG!!! OMG!!! ${mention} just earned there very own wings~!!!***<a:MenheraChanFly:1398259676315123723> <a:kawaii_winged_hearts:1397407675674919022> <a:angelheart:1397407694930968698> 
-You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218107945> 
-The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218107945> 
-But remember, with great divine power comes great divine responsibility. Don’t abuse the privilege — use your divine gifts for good, angel!<a:RainbowCatBoba:1397426167136518145> <a:HeartPop:1397425476426797066> 
-You’re not just flying; you’re embodying **real angel vibes** now — full of grace, light, and purpose.<a:heartsfloat:1399306141539897406> <:a_cute_love_snuggle:1400040183063122041> <a:heartsfloat:1399306141539897406> 
-You’ve got the divine keys now. Heaven’s on your side — go make it shine!<a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
-#UnleashTheWings #DivineAscension #HeavenlyElite <:Macaron_Blue:1399161252168597524><:RetroSushi:1399259999380701265> <a:a_afx_rb_sparkles_glitter:1399303765781119008>  #RealAngelVibes<a:Hearts:1398475288886640680>`,
+You’ve unlocked full celestial privileges — wings, power, and the ability to soar higher than ever before <a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298> <a:pinkwingsr:1398052457686372483> <a:a_afx_heart_explosion:1399307416218109000> 
+The angels are proud, the heavens are cheering. It’s time to fly and show the world what an ***angel with wings*** can do!<a:Announcement:1397426113931640893> <:heartsies:1399307354335612968> <a:a_afx_heart_explosion:1399307416218109000>
+You’ve got the divine keys now. Heaven’s on your side — go make it shine! <a:pinkwingl:1398052283769684102> <a:rainbow_heart:1397425632715210943> <a:pinkwingsr:1398052457686372483> <a:a_afx_rb_sparkles_glitter:1399303765781119008>`,
 
   [ROLE_FIFTH]: (mention) => `<a:HeartPop:1397425476426797066>*** KYAAA!!! OMG!!! OMG!!! OMG!!! ${mention} is now a Full Fledged Angel!!!***<:BE_NOT_AFRAID_Lilguy:1397407742842376252> 
 You’ve unlocked EVERYTHING! wings, power, *unlimited privileges*, and the full might of Heaven’s elite <a:a_afx_rb_sparkles_glitter:1399303765781119008><a:pinkwingl:1398052283769684102> <a:galaxy_heart:1397425961116369087><a:pinkwingsr:1398052457686372483><a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 No limits. No boundaries. You’re at the top, the very *essence* of elite, angelic power. <a:HeartConfetti:1397426142356701337> <:a_cute_love_snuggle:1400040183063122041> <a:HeartConfetti:1397426142356701337> 
-You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283764102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218107945> 
-You’ve earned your place at the pinnacle. Own it, rule it, and show them what true *elite vibes* are made of! <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> <a:Rainbow_heart:1398262714727665725> 
-#CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
-#RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`,
+You’re not just an angel, you’re the definition of **angel vibes** — divine, untouchable, and *unstoppable*.<a:pinkwingl:1398052283769684102> <a:cloudy_heart:1397818023838220298><a:pinkwingsr:1398052457686372483><a:kawaii_winged_hearts:1397407675674919022><a:angelheart:1397407694930968698><a:a_afx_heart_explosion:1399307416218109000>`,
 
   [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:1397818023838220298>☁️ ***
 ${mention} you have sinned. You have been silenced.
@@ -96,138 +89,68 @@ Until then…<a:pinkwingl:1398052283769684102> <:Angry_Angel:1397425835551752253
 #RepentAndWatch<:RetroGameOverLaptop:1397449586142089236> 
 #MutedByTheDivine<a:MuteButton:1397425770980315176> 
 #AngelSeesAll<a:angelheart:1397407694930968698><a:kawaii_winged_hearts:1397407675674919022> 
-#YouShouldBeGrateful<:sad_angel:1397425823077892201>`,
+#YouShouldBeGrateful<:sad_angel:1397425823077892201>`
 };
 
-// ---------- Debounce map ----------
+// Debounce map
 const recentRoleMessages = new Map();
-const DEBOUNCE_MS = DEBOUNCE_MS || 5000; // fallback constant (not to be confused with env var above)
 
-// ---------- Webhook setup (if WEBHOOK_URL provided in env/secrets) ----------
-let levelUpWebhook = null;
-const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.LEVEL_UP_WEBHOOK_URL || null;
-if (WEBHOOK_URL) {
-  try {
-    levelUpWebhook = new WebhookClient({ url: WEBHOOK_URL });
-    console.log('✅ WebhookClient created (url).');
-  } catch (e) {
-    try {
-      const match = (WEBHOOK_URL || '').match(/\/webhooks\/(\d+)\/([\w-]+)/);
-      if (match) {
-        const [, id, token] = match;
-        levelUpWebhook = new WebhookClient({ id, token });
-        console.log('✅ WebhookClient created (id/token).');
-      } else {
-        throw new Error('Invalid webhook format');
-      }
-    } catch (err) {
-      console.warn('⚠️ WebhookClient not created:', err?.message ?? err);
-      levelUpWebhook = null;
-    }
-  }
-} else {
-  console.log('ℹ️ No WEBHOOK_URL provided; will post as bot user to LEVEL_UP_CHANNEL.');
-}
-
-// ---------- Create lightweight Discord client ----------
+// Create client
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
-  makeCache: Options.cacheWithLimits({
-    MessageManager: 0,
-    ReactionManager: 0,
-    ThreadMemberManager: 0,
-    GuildMemberManager: 200,
-  }),
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-// ---------- Helper: send level-up (webhook preferred; fallback to channel send) ----------
-async function sendLevelUp(guild, text) {
-  try {
-    if (levelUpWebhook) {
-      await levelUpWebhook.send({ content: text, allowedMentions: { parse: ['users'] } });
-      DEBUG_MESSAGES && console.log('📤 Sent via webhook.');
-      return;
-    }
+// Ready event
+client.once(Events.ClientReady, () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`ℹ️ Level-up channel id: ${LEVEL_UP_CHANNEL}`);
+});
 
-    const ch = await guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-    if (!ch) {
-      console.warn('⚠️ LEVEL_UP_CHANNEL not found:', LEVEL_UP_CHANNEL);
-      return;
-    }
-    if (typeof ch.isTextBased === 'function' ? ch.isTextBased() : ch.isText) {
-      await ch.send({ content: text, allowedMentions: { parse: ['users'] } }).catch((e) => {
-        console.warn('❌ Fallback channel send failed:', e?.message ?? e);
-      });
-      DEBUG_MESSAGES && console.log('📤 Sent via channel fallback.');
-    } else {
-      console.warn('⚠️ LEVEL_UP_CHANNEL is not text-based:', LEVEL_UP_CHANNEL);
-    }
-  } catch (err) {
-    console.error('❌ sendLevelUp error:', err);
-  }
-}
-
-// ---------- Role change handler (debounced per user+role) ----------
+// GuildMemberUpdate: role detection + debounce
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
-    const added = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
-    if (!added.size) return;
+    const addedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    if (!addedRoles.size) return;
 
-    for (const role of added.values()) {
+    for (const role of addedRoles.values()) {
       if (!ROLE_MESSAGES[role.id]) continue;
 
       const key = `${newMember.id}-${role.id}`;
       const now = Date.now();
-      const lastSent = recentRoleMessages.get(key) || 0;
-      if (now - lastSent < DEBOUNCE_MS) {
-        DEBUG_MESSAGES && console.log(`🟨 Debounced role message for ${newMember.user.tag} role=${role.id}`);
-        continue;
-      }
+      if (recentRoleMessages.has(key) && now - recentRoleMessages.get(key) < DEBOUNCE_MS) continue;
+
       recentRoleMessages.set(key, now);
 
       const mention = `<@${newMember.id}>`;
       const text = ROLE_MESSAGES[role.id](mention);
-      await sendLevelUp(newMember.guild, text);
+
+      if (levelUpWebhook) {
+        await levelUpWebhook.send({ content: text, allowedMentions: { parse: ['users'] } })
+          .catch(async () => {
+            const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+            if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
+          });
+      } else {
+        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+        if (ch?.isTextBased()) await ch.send({ content: text }).catch(() => {});
+      }
     }
   } catch (err) {
-    console.error('GuildMemberUpdate handler error:', err);
+    console.error('GuildMemberUpdate error:', err);
   }
 });
 
-// ---------- Express keep-alive server ----------
+// Keep-alive server for UptimeRobot
 const app = express();
 app.get('/', (req, res) => res.send('Bot is alive!'));
 app.listen(PORT, () => console.log(`✅ Express server listening on port ${PORT}`));
 
-// ---------- Debugged login section ----------
-console.log('✅ Starting bot...');
-
+// Login
 if (!TOKEN) {
-  console.error('❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?');
-} else {
-  console.log('✅ DISCORD_TOKEN found, length:', TOKEN.length);
-  console.log('Attempting login...');
+  console.error('❌ Missing DISCORD_TOKEN — set it in Render secrets');
+  process.exit(1);
 }
 
-client.on('error', (err) => {
-  console.error('Client error:', err);
-});
-client.on('warn', (info) => {
-  console.warn('Client warning:', info);
-});
-client.on('shardError', (err) => {
-  console.error('Shard error:', err);
-});
-client.on('disconnect', (event) => {
-  console.warn('Client disconnected:', event);
-});
-
 client.login(TOKEN)
-  .then(() => {
-    console.log('✅ Login request sent (awaiting ready event).');
-  })
-  .catch((err) => {
-    console.error('❌ Login failed (rejected promise):', err);
-    if (err && err.code) console.error('Error code:', err.code);
-    if (err && err.message) console.error('Error message:', err.message);
-  });
+  .then(() => console.log('✅ Login request sent.'))
+  .catch(err => console.error('❌ Login failed:', err));
