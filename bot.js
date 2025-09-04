@@ -22,7 +22,7 @@ if (fs.existsSync(secretEnvPath)) {
 // Config
 const TOKEN = process.env.DISCORD_TOKEN;
 const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
-const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || 'https://discord.com/api/webhooks/1404151431577079919/DSE2J75xlQu0IJykIYyjKBOGlhCWKJaRpSDDuK7gdn9GStOxSxj_PxQnOKdish6irzg1';
+const LEVEL_UP_WEBHOOK_URL = process.env.LEVEL_UP_WEBHOOK_URL || '';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 // Debounce time (ms)
@@ -113,20 +113,24 @@ client.once(Events.ClientReady, () => {
 // GuildMemberUpdate: role detection + debounce
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
-    const addedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-    if (!addedRoles.size) return;
+    // safer diff: avoid duplicate events
+    const oldRoles = new Set(oldMember.roles.cache.keys());
+    const newRoles = new Set(newMember.roles.cache.keys());
+    const addedRoles = [...newRoles].filter(r => !oldRoles.has(r));
 
-    for (const role of addedRoles.values()) {
-      if (!ROLE_MESSAGES[role.id]) continue;
+    if (!addedRoles.length) return;
 
-      const key = `${newMember.id}-${role.id}`;
+    for (const roleId of addedRoles) {
+      if (!ROLE_MESSAGES[roleId]) continue;
+
+      const key = `${newMember.id}-${roleId}`;
       const now = Date.now();
       if (recentRoleMessages.has(key) && now - recentRoleMessages.get(key) < DEBOUNCE_MS) continue;
 
       recentRoleMessages.set(key, now);
 
       const mention = `<@${newMember.id}>`;
-      const text = ROLE_MESSAGES[role.id](mention);
+      const text = ROLE_MESSAGES[roleId](mention);
 
       if (levelUpWebhook) {
         await levelUpWebhook.send({ content: text, allowedMentions: { parse: ['users'] } })
