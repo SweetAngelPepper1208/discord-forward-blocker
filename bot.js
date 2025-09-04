@@ -1,43 +1,55 @@
-// bot.js - role-detect only, sends full messages to a specific channel
+// bot.js
+import {
+  Client,
+  GatewayIntentBits,
+  Events,
+  Partials,
+  Options,
+} from 'discord.js';
+import express from 'express';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import express from 'express';
-import { Client, GatewayIntentBits, Events, Options } from 'discord.js';
+import { fileURLToPath } from 'url';
 
-// ---------- secrets loader (Render / local / env) ----------
-function readSecret(name) {
-  const renderPath = path.join('/etc/secrets', name);
-  const localPath = path.join('./secrets', name);
-  if (fs.existsSync(renderPath)) return fs.readFileSync(renderPath, 'utf8').trim();
-  if (fs.existsSync(localPath)) return fs.readFileSync(localPath, 'utf8').trim();
-  return process.env[name];
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ---------- Load .env from Render secret file if exists, else fallback to local .env ----------
+const secretEnvPath = '/run/secrets/.env';
+if (fs.existsSync(secretEnvPath)) {
+  dotenv.config({ path: secretEnvPath });
+  console.log('✅ Loaded .env from Render secret file');
+} else {
+  dotenv.config({ path: path.join(__dirname, '.env') });
+  console.log('✅ Loaded local .env file');
 }
 
-const DISCORD_TOKEN = readSecret('DISCORD_TOKEN');
-const PORT = process.env.PORT || Number(readSecret('PORT')) || 3000;
-const DEBUG = (readSecret('DEBUG_MESSAGES') || process.env.DEBUG_MESSAGES || 'false').toLowerCase() === 'true';
+console.log('DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '[REDACTED]' : 'NOT FOUND');
 
-// Use the channel ID you supplied, but allow override via secret/env if desired
-const DEFAULT_LEVEL_UP_CHANNEL = '1397916231545389096';
-const LEVEL_UP_CHANNEL = readSecret('LEVEL_UP_CHANNEL') || DEFAULT_LEVEL_UP_CHANNEL;
+// ---------- Config ----------
+const TOKEN = process.env.DISCORD_TOKEN;
+const LEVEL_UP_CHANNEL = process.env.LEVEL_UP_CHANNEL || '1397916231545389096';
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+const DEBUG_MESSAGES = (process.env.DEBUG_MESSAGES || 'false').toLowerCase() === 'true';
 
-console.log('--- startup ---');
-console.log('DISCORD_TOKEN present:', !!DISCORD_TOKEN);
-console.log('LEVEL_UP_CHANNEL:', LEVEL_UP_CHANNEL);
-console.log('PORT:', PORT);
-console.log('DEBUG:', DEBUG);
+if (!TOKEN) {
+  console.error('❌ Missing DISCORD_TOKEN in environment — stopping.');
+  process.exit(1);
+}
 
-// ---------- role IDs ----------
-const ROLE_FIRST  = '1399135278396080238'; // First-Time Believer
+// ---------- Role IDs ----------
+const ROLE_FIRST = '1399135278396080238'; // First-Time Believer (text only)
 const ROLE_SECOND = '1399992492568350794'; // Blessed Cutie
-const ROLE_THIRD  = '1399993506759573616'; // Angel in Training
+const ROLE_THIRD = '1399993506759573616'; // Angel in Training
 const ROLE_FOURTH = '1399994681970004021'; // Angel with Wings
-const ROLE_FIFTH  = '1399994799334887495'; // Full-Fledged Angel
-const ROLE_SIXTH  = '1399999195309408320'; // silenced by heaven
+const ROLE_FIFTH = '1399994799334887495'; // Full-Fledged Angel
+const ROLE_SIXTH = '1399999195309408320'; // silenced by heaven
 
-// ---------- full messages (exact content you provided) ----------
+// ---------- Full level-up messages (unchanged from your input) ----------
 const ROLE_MESSAGES = {
-  [ROLE_FIRST]: (mention) => `Welcome ${mention} to the server! 🌸 You’ve just become a **First-Time Believer**! Take your first steps into heaven! ✨`,
+  [ROLE_FIRST]: (mention) =>
+    `Welcome ${mention} to the server! 🌸 You’ve just become a **First-Time Believer**! Take your first steps into heaven! ✨`,
 
   [ROLE_SECOND]: (mention) => `AHHH OMG!!! ${mention}<a:HeartPop:1397425476426797066> 
 You just leveled up to a Blessed Cutie!! 💻<a:PinkHearts:1399307823850065971> 
@@ -71,7 +83,7 @@ You’ve earned your place at the pinnacle. Own it, rule it, and show them what 
 #CelestialKing #UnlimitedPower #AngelicElite <a:Hearts:1398475288886640680> <a:KawaiiBunny_Recolored:1399156026187710560> <a:a_afx_rb_sparkles_glitter:1399303765781119008> 
 #RealAngelVibes📡<a:angelheart:1397407694930968698><:heartsies:1399307354335612968>`,
 
-  [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:1397818023838220298>☁️ ***
+  [ROLE_SIXTH]: (mention) => `***☁️<a:cloudy_heart:1397818023838220298>Message from Heaven<a:cloudy_heart:139781623...>☁️ ***
 ${mention} you have sinned. You have been silenced.
 Heaven has no place for noisy little sinners like you right now.<a:Chika_whack_whack_whack_FB:1399306320745857045> <a:a_anger:1399306470192840805> 
 Be grateful you're only muted and not cast out entirely, okay~? <:a_cute_love_snuggle:1400040183063122041> <:heartsies:1399307354335612968> 
@@ -86,18 +98,17 @@ Until then…<a:pinkwingl:1398052283769684102> <:Angry_Angel:1397425835551752253
 #YouShouldBeGrateful<:sad_angel:1397425823077892201>`,
 };
 
-// ---------- debounce map ----------
-const roleCooldown = new Map();
-const DEBOUNCE_TIME = 5000; // 5 seconds
+// ---------- Debounce map ----------
+const recentRoleMessages = new Map();
+const DEBOUNCE_MS = 2000;
 
-// ---------- create client ----------
-if (!DISCORD_TOKEN) {
-  console.error('❌ DISCORD_TOKEN missing. Set it in env/secrets and redeploy.');
-  process.exit(1);
-}
-
+// ---------- Create lightweight Discord client ----------
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ],
+  partials: [Partials.Message, Partials.Channel],
   makeCache: Options.cacheWithLimits({
     MessageManager: 0,
     ReactionManager: 0,
@@ -106,65 +117,74 @@ const client = new Client({
   }),
 });
 
-// ---------- helper: send to configured channel ----------
-async function sendToLevelChannel(guild, text) {
-  try {
-    const ch = await guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
-    if (!ch) {
-      console.warn('⚠️ Level channel not found:', LEVEL_UP_CHANNEL);
-      return;
-    }
-    // ensure text-based
-    if (typeof ch.isTextBased === 'function' ? ch.isTextBased() : ch.isText) {
-      await ch.send({ content: text, allowedMentions: { parse: ['users'] } });
-      DEBUG && console.log('📤 Sent level-up to channel', LEVEL_UP_CHANNEL);
-    } else {
-      console.warn('⚠️ Level channel is not text-based:', LEVEL_UP_CHANNEL);
-    }
-  } catch (err) {
-    console.error('❌ Error sending to level channel:', err);
-  }
-}
-
-// ---------- role update handler ----------
+// ---------- Role change handler (debounced) ----------
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
-    const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
-    if (!addedRoles.size) return;
+    const added = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
+    if (!added.size) return;
 
-    for (const role of addedRoles.values()) {
-      if (!ROLE_MESSAGES[role.id]) continue;
+    for (const role of added.values()) {
+      if (ROLE_MESSAGES[role.id]) {
+        const key = `${newMember.id}-${role.id}`;
+        const now = Date.now();
 
-      const key = `${newMember.id}-${role.id}`;
-      const now = Date.now();
-      const until = roleCooldown.get(key) || 0;
-      if (now < until) {
-        DEBUG && console.log('➖ Debounced', key);
-        continue;
+        if (recentRoleMessages.has(key)) {
+          const lastSent = recentRoleMessages.get(key);
+          if (now - lastSent < DEBOUNCE_MS) {
+            if (DEBUG_MESSAGES) console.log(`🟨 Debounced role message for ${newMember.user.tag} role=${role.id}`);
+            continue;
+          }
+        }
+
+        recentRoleMessages.set(key, now);
+
+        const mention = `<@${newMember.id}>`;
+        const text = ROLE_MESSAGES[role.id](mention);
+
+        const ch = await newMember.guild.channels.fetch(LEVEL_UP_CHANNEL).catch(() => null);
+        if (ch?.isTextBased()) await ch.send({ content: text, allowedMentions: { parse: ['users'] } }).catch(() => {});
+
       }
-      roleCooldown.set(key, now + DEBOUNCE_TIME);
-
-      const mention = `<@${newMember.id}>`;
-      const text = ROLE_MESSAGES[role.id](mention);
-
-      // send to the configured channel
-      await sendToLevelChannel(newMember.guild, text);
     }
   } catch (err) {
-    console.error('❌ Error in GuildMemberUpdate handler:', err);
+    console.error('GuildMemberUpdate handler error:', err);
   }
 });
 
-// ---------- login & keepalive ----------
+// ---------- Express keep-alive ----------
 const app = express();
-app.get('/', (_, res) => res.send('Bot is alive.'));
-app.listen(PORT, () => console.log(`🌐 Express listening on ${PORT}`));
+app.get('/', (req, res) => res.send('Bot is alive!'));
+app.listen(PORT, () => console.log(`✅ Express server listening on port ${PORT}`));
 
-client.once(Events.ClientReady, c => {
-  console.log(`✅ Logged in as ${c.user.tag}`);
+// ---------- Debugged login section ----------
+console.log("✅ Starting bot...");
+
+if (!TOKEN) {
+  console.error("❌ DISCORD_TOKEN is missing! Did you set it in Render environment variables?");
+} else {
+  console.log("✅ DISCORD_TOKEN found, length:", TOKEN.length);
+  console.log("Attempting login...");
+}
+
+client.on('error', (err) => {
+  console.error('Client error:', err);
+});
+client.on('warn', (info) => {
+  console.warn('Client warning:', info);
+});
+client.on('shardError', (err) => {
+  console.error('Shard error:', err);
+});
+client.on('disconnect', (event) => {
+  console.warn('Client disconnected:', event);
 });
 
-console.log('🌐 Attempting login...');
-client.login(DISCORD_TOKEN).catch(err => {
-  console.error('❌ Login failed:', err);
-});
+client.login(TOKEN)
+  .then(() => {
+    console.log('✅ Login request sent (awaiting ready event).');
+  })
+  .catch((err) => {
+    console.error('❌ Login failed (rejected promise):', err);
+    if (err && err.code) console.error('Error code:', err.code);
+    if (err && err.message) console.error('Error message:', err.message);
+  });
